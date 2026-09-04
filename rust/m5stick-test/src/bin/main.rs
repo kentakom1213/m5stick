@@ -10,7 +10,8 @@ use embedded_graphics::{
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{
     delay::Delay,
-    gpio::{Input, InputConfig, Level, Output, OutputConfig},
+    gpio::{Level, Output, OutputConfig},
+    i2c::master::{Config as I2cConfig, I2c},
     spi::{
         Mode,
         master::{Config as SpiConfig, Spi},
@@ -97,34 +98,48 @@ fn main() -> ! {
 
     println!("Hello, Rust! should now be visible");
 
-    let button_a = Input::new(peripherals.GPIO37, InputConfig::default());
+    let mut i2c = I2c::new(
+        peripherals.I2C0,
+        I2cConfig::default().with_frequency(Rate::from_khz(100)),
+    )
+    .unwrap()
+    .with_sda(peripherals.GPIO0)
+    .with_scl(peripherals.GPIO26);
 
-    let mut was_pressed = button_a.is_low();
+    println!("JoyC I2C initialized");
+
+    const MINI_JOYC_ADDR: u8 = 0x54;
 
     loop {
-        let pressed = button_a.is_low();
+        let mut x = [0u8; 1];
+        let mut y = [0u8; 1];
+        let mut btn = [0u8; 1];
 
-        if pressed != was_pressed {
-            // 簡単なチャタリング対策
-            delay.delay_millis(20);
+        let rx = i2c.write_read(MINI_JOYC_ADDR, &[0x20], &mut x);
+        let ry = i2c.write_read(MINI_JOYC_ADDR, &[0x21], &mut y);
+        let rbtn = i2c.write_read(MINI_JOYC_ADDR, &[0x30], &mut btn);
 
-            let pressed = button_a.is_low();
+        match (rx, ry) {
+            (Ok(()), Ok(())) => {
+                let x = x[0] as i8;
+                let y = y[0] as i8;
 
-            if pressed != was_pressed {
-                display.clear(Rgb565::BLACK).unwrap();
+                println!("Mini JoyC: x={x}, y={y}");
+            }
 
-                let message = if pressed { "Pressed!" } else { "Released" };
-
-                Text::new(message, Point::new(10, 30), text_style)
-                    .draw(&mut display)
-                    .unwrap();
-
-                println!("{message}");
-
-                was_pressed = pressed;
+            (Err(err), _) | (_, Err(err)) => {
+                println!("Mini JoyC read error: {:?}", err);
             }
         }
 
-        delay.delay_millis(5);
+        match rbtn {
+            Ok(()) if btn[0] == 0 => {
+                println!("Mini JoyC Button: Pushed!");
+            }
+
+            _ => {}
+        }
+
+        delay.delay_millis(100);
     }
 }
