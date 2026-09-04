@@ -39,7 +39,8 @@ where
     fn read_register(&mut self, register: u8) -> Result<u8, I2C::Error> {
         let mut value = [0u8; 1];
 
-        self.i2c.write_read(self.address, &[register], &mut value)?;
+        self.i2c.write(self.address, &[register])?;
+        self.i2c.read(self.address, &mut value)?;
 
         Ok(value[0])
     }

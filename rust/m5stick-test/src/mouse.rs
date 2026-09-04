@@ -9,14 +9,33 @@ pub struct MouseState {
 
 pub fn from_joystick(state: JoyState) -> MouseState {
     MouseState {
-        dx: apply_dead_zone(state.x),
-        dy: apply_dead_zone(state.y),
+        dx: axis_to_delta(state.x),
+        // マウス座標とJoyCの向きが逆ならここで反転
+        dy: axis_to_delta(state.y),
         left_pressed: state.pressed,
     }
 }
 
-fn apply_dead_zone(value: i8) -> i8 {
-    const DEAD_ZONE: i8 = 10;
+fn axis_to_delta(value: i8) -> i8 {
+    const DEAD_ZONE: i32 = 12;
+    const MAX_INPUT: i32 = 127;
+    const MAX_SPEED: i32 = 12;
 
-    if value.abs() <= DEAD_ZONE { 0 } else { value }
+    let value = i32::from(value);
+
+    let sign = value.signum();
+    let magnitude = value.abs();
+
+    if magnitude <= DEAD_ZONE {
+        return 0;
+    }
+
+    let normalized = magnitude - DEAD_ZONE;
+    let range = MAX_INPUT - DEAD_ZONE;
+
+    let speed =
+        normalized * normalized * MAX_SPEED
+        / (range * range);
+
+    (sign * speed) as i8
 }

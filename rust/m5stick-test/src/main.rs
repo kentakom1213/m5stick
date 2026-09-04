@@ -27,11 +27,11 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default());
 
-    let mut delay = Delay::new();
+    let delay = Delay::new();
 
     let i2c = I2c::new(
         peripherals.I2C0,
-        I2cConfig::default().with_frequency(Rate::from_khz(200)),
+        I2cConfig::default().with_frequency(Rate::from_khz(100)),
     )
     .unwrap()
     .with_sda(peripherals.GPIO0)
