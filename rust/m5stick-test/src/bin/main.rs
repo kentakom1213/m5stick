@@ -2,25 +2,27 @@
 #![no_main]
 
 use embedded_graphics::{
+    mono_font::{MonoTextStyle, ascii::FONT_10X20},
     pixelcolor::Rgb565,
     prelude::*,
+    text::Text,
 };
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{
     delay::Delay,
     gpio::{Level, Output, OutputConfig},
     spi::{
-        master::{Config as SpiConfig, Spi},
         Mode,
+        master::{Config as SpiConfig, Spi},
     },
     time::Rate,
 };
 use esp_println::println;
 use mipidsi::{
+    Builder,
     interface::SpiInterface,
     models::ST7789,
     options::{ColorInversion, ColorOrder},
-    Builder,
 };
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -39,37 +41,17 @@ fn main() -> ! {
     println!("starting LCD test");
 
     // M5StickC Plus2 の電源保持
-    let _hold = Output::new(
-        peripherals.GPIO4,
-        Level::High,
-        OutputConfig::default(),
-    );
+    let _hold = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
 
     // LCD バックライト
-    let _backlight = Output::new(
-        peripherals.GPIO27,
-        Level::High,
-        OutputConfig::default(),
-    );
+    let _backlight = Output::new(peripherals.GPIO27, Level::High, OutputConfig::default());
 
     // LCD 制御ピン
-    let dc = Output::new(
-        peripherals.GPIO14,
-        Level::Low,
-        OutputConfig::default(),
-    );
+    let dc = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());
 
-    let rst = Output::new(
-        peripherals.GPIO12,
-        Level::High,
-        OutputConfig::default(),
-    );
+    let rst = Output::new(peripherals.GPIO12, Level::High, OutputConfig::default());
 
-    let cs = Output::new(
-        peripherals.GPIO5,
-        Level::High,
-        OutputConfig::default(),
-    );
+    let cs = Output::new(peripherals.GPIO5, Level::High, OutputConfig::default());
 
     // SPI
     let spi = Spi::new(
@@ -84,13 +66,11 @@ fn main() -> ! {
 
     // mipidsi は SpiDevice を要求するので，
     // SPI bus + CS を ExclusiveDevice にまとめる
-    let spi_device =
-        ExclusiveDevice::new(spi, cs, Delay::new()).unwrap();
+    let spi_device = ExclusiveDevice::new(spi, cs, Delay::new()).unwrap();
 
     let mut buffer = [0u8; 512];
 
-    let interface =
-        SpiInterface::new(spi_device, dc, &mut buffer);
+    let interface = SpiInterface::new(spi_device, dc, &mut buffer);
 
     let mut delay = Delay::new();
 
@@ -107,9 +87,15 @@ fn main() -> ! {
 
     println!("LCD initialized");
 
-    display.clear(Rgb565::RED).unwrap();
+    display.clear(Rgb565::BLACK).unwrap();
 
-    println!("screen should now be red");
+    let text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+
+    Text::new("Hello, Rust!", Point::new(7, 30), text_style)
+        .draw(&mut display)
+        .unwrap();
+
+    println!("Hello, Rust! should now be visible");
 
     loop {}
 }
