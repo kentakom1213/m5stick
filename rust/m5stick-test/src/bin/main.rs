@@ -10,7 +10,7 @@ use embedded_graphics::{
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{
     delay::Delay,
-    gpio::{Level, Output, OutputConfig},
+    gpio::{Input, InputConfig, Level, Output, OutputConfig},
     spi::{
         Mode,
         master::{Config as SpiConfig, Spi},
@@ -97,5 +97,34 @@ fn main() -> ! {
 
     println!("Hello, Rust! should now be visible");
 
-    loop {}
+    let button_a = Input::new(peripherals.GPIO37, InputConfig::default());
+
+    let mut was_pressed = button_a.is_low();
+
+    loop {
+        let pressed = button_a.is_low();
+
+        if pressed != was_pressed {
+            // 簡単なチャタリング対策
+            delay.delay_millis(20);
+
+            let pressed = button_a.is_low();
+
+            if pressed != was_pressed {
+                display.clear(Rgb565::BLACK).unwrap();
+
+                let message = if pressed { "Pressed!" } else { "Released" };
+
+                Text::new(message, Point::new(10, 30), text_style)
+                    .draw(&mut display)
+                    .unwrap();
+
+                println!("{message}");
+
+                was_pressed = pressed;
+            }
+        }
+
+        delay.delay_millis(5);
+    }
 }
