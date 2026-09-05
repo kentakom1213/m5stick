@@ -20,6 +20,13 @@ embedded-graphics = "0.8.2"
 embedded-hal-bus = "0.3.0"
 mipidsi = "0.10.0"
 embedded-hal = "1"
+embassy-executor = "0.10.0"
+embassy-futures = "0.1"
+embassy-time = "0.5.0"
+esp-alloc = "0.10.0"
+esp-radio = { version = "0.18.0", features = ["esp32", "ble", "unstable"] }
+esp-rtos = { version = "0.3.0", features = ["esp32", "embassy", "esp-alloc", "esp-radio"] }
+trouble-host = "0.6.0"
 
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html
