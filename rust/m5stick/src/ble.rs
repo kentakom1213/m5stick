@@ -485,13 +485,13 @@ async fn presenter_task<P: PacketPool>(
         if a_pressed && !a_was_pressed {
             println!("next slide");
 
-            send_key(&keyboard, conn, PresenterAction::NextSlide).await;
+            send_key(&keyboard, conn, PresenterAction::ButtonA).await;
         }
 
         if b_pressed && !b_was_pressed {
             println!("previous slide");
 
-            send_key(&keyboard, conn, PresenterAction::PreviousSlide).await;
+            send_key(&keyboard, conn, PresenterAction::ButtonB).await;
         }
 
         a_was_pressed = a_pressed;

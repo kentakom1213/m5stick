@@ -1,14 +1,16 @@
+use crate::config::{BUTTON_A_KEY, BUTTON_B_KEY};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PresenterAction {
-    NextSlide,
-    PreviousSlide,
+    ButtonA,
+    ButtonB,
 }
 
 impl PresenterAction {
     pub fn key_code(self) -> u8 {
         match self {
-            Self::NextSlide => 0x4f,     // Right Arrow
-            Self::PreviousSlide => 0x50, // Left Arrow
+            Self::ButtonA => BUTTON_A_KEY,
+            Self::ButtonB => BUTTON_B_KEY,
         }
     }
 }

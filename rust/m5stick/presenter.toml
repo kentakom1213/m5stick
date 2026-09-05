@@ -7,10 +7,10 @@ dead_zone = 6
 base_speed_px_per_sec = 300.0
 
 # 最大カーソル速度．poll_hzを変えても速度は変わらない
-max_speed_px_per_sec = 1800.0
+max_speed_px_per_sec = 2000.0
 
 # 倒し続けたときの速度倍率の上昇量
-gain_rise_per_sec = 6.0
+gain_rise_per_sec = 6.5
 
 # 中央に戻したときの速度倍率の低下量
 gain_fall_per_sec = 6.0
@@ -26,6 +26,10 @@ smoothing = 0.55
 
 invert_x = false
 invert_y = true
+
+[keymap]
+button_a = "RightArrow"
+button_b = "LeftArrow"
 
 [battery]
 raw_empty = 1900
