@@ -101,8 +101,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
         .init(&mut lcd_delay)
         .unwrap();
 
-    display::render(&mut lcd, display::Status::Waiting, battery::percent(), None).unwrap();
-
     // esp-rtos / Embassy
     let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
 
@@ -133,6 +131,19 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let mut battery_pin = adc_config.enable_pin(peripherals.GPIO38, Attenuation::_11dB);
 
     let mut battery_adc = Adc::new(peripherals.ADC1, adc_config);
+
+    if let Ok(raw) = nb::block!(battery_adc.read_oneshot(&mut battery_pin)) {
+        battery::update(raw);
+
+        println!(
+            "battery raw={} level={}% mv~{}",
+            raw,
+            battery::percent(),
+            battery::millivolts(),
+        );
+    }
+
+    display::render(&mut lcd, display::Status::Waiting, battery::percent(), None).unwrap();
 
     // BLE controller
     let connector = BleConnector::new(peripherals.BT, Default::default()).unwrap();

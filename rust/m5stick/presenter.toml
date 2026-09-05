@@ -1,19 +1,28 @@
 [mouse]
-poll_hz = 125
+poll_hz = 150
 
-dead_zone = 10
+dead_zone = 6
+
+# 倒した直後のカーソル速度
+base_speed_px_per_sec = 300.0
 
 # 最大カーソル速度．poll_hzを変えても速度は変わらない
-max_speed_px_per_sec = 1600.0
+max_speed_px_per_sec = 1800.0
+
+# 倒し続けたときの速度倍率の上昇量
+gain_rise_per_sec = 6.0
+
+# 中央に戻したときの速度倍率の低下量
+gain_fall_per_sec = 6.0
 
 # 0.0 = 線形
 # 1.0 = 二次カーブ
 # 発表用途では高めの方が微調整しやすい
-curve_weight = 0.7
+curve_weight = 0.6
 
 # 0.0に近いほど滑らかだが追従が遅い
 # 1.0なら平滑化なし
-smoothing = 0.35
+smoothing = 0.55
 
 invert_x = false
 invert_y = true

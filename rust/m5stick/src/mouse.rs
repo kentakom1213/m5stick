@@ -1,6 +1,7 @@
 use crate::{
     config::{
-        MOUSE_CURVE_WEIGHT_Q15, MOUSE_DEAD_ZONE, MOUSE_INVERT_X, MOUSE_INVERT_Y,
+        MOUSE_BASE_SPEED_PX_PER_SEC, MOUSE_CURVE_WEIGHT_Q15, MOUSE_DEAD_ZONE,
+        MOUSE_GAIN_FALL_Q15_PER_SEC, MOUSE_GAIN_RISE_Q15_PER_SEC, MOUSE_INVERT_X, MOUSE_INVERT_Y,
         MOUSE_MAX_SPEED_PX_PER_SEC, MOUSE_POLL_HZ, MOUSE_SMOOTHING_Q15,
     },
     mini_joyc::JoyState,
@@ -21,6 +22,8 @@ pub struct MouseMapper {
     filtered_x_q8: i32,
     filtered_y_q8: i32,
 
+    speed_gain_q15: i64,
+
     residual_x_q16: i64,
     residual_y_q16: i64,
 }
@@ -30,6 +33,7 @@ impl MouseMapper {
         Self {
             filtered_x_q8: 0,
             filtered_y_q8: 0,
+            speed_gain_q15: Q15_ONE,
             residual_x_q16: 0,
             residual_y_q16: 0,
         }
@@ -40,15 +44,22 @@ impl MouseMapper {
 
         update_filter(&mut self.filtered_y_q8, state.y);
 
-        let velocity_x_q15 = axis_velocity_q15(self.filtered_x_q8, MOUSE_INVERT_X);
+        let shaped_x_q15 = axis_shaped_q15(self.filtered_x_q8, MOUSE_INVERT_X);
 
-        let velocity_y_q15 = axis_velocity_q15(self.filtered_y_q8, MOUSE_INVERT_Y);
+        let shaped_y_q15 = axis_shaped_q15(self.filtered_y_q8, MOUSE_INVERT_Y);
 
-        // velocity は pixels/sec * 2^15．
-        // 1 poll あたりの移動量を Q16 pixel へ変換する．
-        self.residual_x_q16 += velocity_x_q15 * 2 / MOUSE_POLL_HZ;
+        update_speed_gain(
+            &mut self.speed_gain_q15,
+            shaped_x_q15 != 0 || shaped_y_q15 != 0,
+        );
 
-        self.residual_y_q16 += velocity_y_q15 * 2 / MOUSE_POLL_HZ;
+        let velocity_x_q16 = axis_velocity_q16(shaped_x_q15, self.speed_gain_q15);
+
+        let velocity_y_q16 = axis_velocity_q16(shaped_y_q15, self.speed_gain_q15);
+
+        self.residual_x_q16 += velocity_x_q16 / MOUSE_POLL_HZ;
+
+        self.residual_y_q16 += velocity_y_q16 / MOUSE_POLL_HZ;
 
         MouseState {
             dx: take_delta(&mut self.residual_x_q16),
@@ -66,7 +77,20 @@ fn update_filter(current_q8: &mut i32, sample: i8) {
     *current_q8 += (i64::from(difference) * i64::from(MOUSE_SMOOTHING_Q15) / Q15_ONE) as i32;
 }
 
-fn axis_velocity_q15(value_q8: i32, invert: bool) -> i64 {
+fn update_speed_gain(speed_gain_q15: &mut i64, active: bool) {
+    let max_gain_q15 =
+        i64::from(MOUSE_MAX_SPEED_PX_PER_SEC) * Q15_ONE / i64::from(MOUSE_BASE_SPEED_PX_PER_SEC);
+
+    if active {
+        *speed_gain_q15 += i64::from(MOUSE_GAIN_RISE_Q15_PER_SEC) / MOUSE_POLL_HZ;
+        *speed_gain_q15 = (*speed_gain_q15).clamp(Q15_ONE, max_gain_q15);
+    } else {
+        *speed_gain_q15 -= i64::from(MOUSE_GAIN_FALL_Q15_PER_SEC) / MOUSE_POLL_HZ;
+        *speed_gain_q15 = (*speed_gain_q15).max(Q15_ONE);
+    }
+}
+
+fn axis_shaped_q15(value_q8: i32, invert: bool) -> i64 {
     let mut value = i64::from(value_q8);
 
     if invert {
@@ -93,7 +117,16 @@ fn axis_velocity_q15(value_q8: i32, invert: bool) -> i64 {
 
     let shaped_q15 = ((Q15_ONE - weight) * normalized_q15 + weight * squared_q15) / Q15_ONE;
 
-    sign * shaped_q15 * i64::from(MOUSE_MAX_SPEED_PX_PER_SEC)
+    sign * shaped_q15
+}
+
+fn axis_velocity_q16(shaped_q15: i64, speed_gain_q15: i64) -> i64 {
+    let velocity_q16 =
+        shaped_q15 * speed_gain_q15 * i64::from(MOUSE_BASE_SPEED_PX_PER_SEC) * 2 / Q15_ONE;
+
+    let max_velocity_q16 = i64::from(MOUSE_MAX_SPEED_PX_PER_SEC) * Q16_ONE;
+
+    velocity_q16.clamp(-max_velocity_q16, max_velocity_q16)
 }
 
 fn take_delta(residual_q16: &mut i64) -> i8 {

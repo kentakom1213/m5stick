@@ -11,7 +11,10 @@ struct Config {
 struct MouseConfig {
     poll_hz: u64,
     dead_zone: i32,
+    base_speed_px_per_sec: f64,
     max_speed_px_per_sec: f64,
+    gain_rise_per_sec: f64,
+    gain_fall_per_sec: f64,
     curve_weight: f64,
     smoothing: f64,
     invert_x: bool,
@@ -74,8 +77,23 @@ fn generate_presenter_config() {
     );
 
     assert!(
-        mouse.max_speed_px_per_sec > 0.0,
-        "mouse.max_speed_px_per_sec must be greater than 0"
+        mouse.base_speed_px_per_sec > 0.0,
+        "mouse.base_speed_px_per_sec must be greater than 0"
+    );
+
+    assert!(
+        mouse.max_speed_px_per_sec >= mouse.base_speed_px_per_sec,
+        "mouse.max_speed_px_per_sec must be greater than or equal to mouse.base_speed_px_per_sec"
+    );
+
+    assert!(
+        mouse.gain_rise_per_sec > 0.0,
+        "mouse.gain_rise_per_sec must be greater than 0"
+    );
+
+    assert!(
+        mouse.gain_fall_per_sec > 0.0,
+        "mouse.gain_fall_per_sec must be greater than 0"
     );
 
     assert!(
@@ -98,7 +116,13 @@ fn generate_presenter_config() {
 
     let smoothing_q15 = (mouse.smoothing * 32768.0).round() as i32;
 
+    let base_speed = mouse.base_speed_px_per_sec.round() as i32;
+
     let max_speed = mouse.max_speed_px_per_sec.round() as i32;
+
+    let gain_rise_q15 = (mouse.gain_rise_per_sec * 32768.0).round() as i32;
+
+    let gain_fall_q15 = (mouse.gain_fall_per_sec * 32768.0).round() as i32;
 
     let generated = format!(
         r#"
@@ -109,7 +133,10 @@ pub const MOUSE_POLL_HZ: i64 = {poll_hz};
 pub const MOUSE_POLL_INTERVAL_US: u64 = {interval_us};
 
 pub const MOUSE_DEAD_ZONE: i32 = {dead_zone};
+pub const MOUSE_BASE_SPEED_PX_PER_SEC: i32 = {base_speed};
 pub const MOUSE_MAX_SPEED_PX_PER_SEC: i32 = {max_speed};
+pub const MOUSE_GAIN_RISE_Q15_PER_SEC: i32 = {gain_rise_q15};
+pub const MOUSE_GAIN_FALL_Q15_PER_SEC: i32 = {gain_fall_q15};
 
 pub const MOUSE_CURVE_WEIGHT_Q15: i32 = {curve_weight_q15};
 pub const MOUSE_SMOOTHING_Q15: i32 = {smoothing_q15};
@@ -128,7 +155,10 @@ pub const BATTERY_POLL_SECONDS: u64 = {battery_poll_seconds};
         poll_hz = mouse.poll_hz,
         interval_us = interval_us,
         dead_zone = mouse.dead_zone,
+        base_speed = base_speed,
         max_speed = max_speed,
+        gain_rise_q15 = gain_rise_q15,
+        gain_fall_q15 = gain_fall_q15,
         curve_weight_q15 = curve_weight_q15,
         smoothing_q15 = smoothing_q15,
         invert_x = mouse.invert_x,
