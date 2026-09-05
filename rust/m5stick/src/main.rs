@@ -9,6 +9,7 @@ mod display;
 mod input;
 mod mini_joyc;
 mod mouse;
+mod presenter;
 mod profile;
 
 use embassy_futures::join::join;
@@ -67,7 +68,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let _power_hold = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
 
     // LCDバックライト
-    let _backlight = Output::new(peripherals.GPIO27, Level::High, OutputConfig::default());
+    let backlight = Output::new(peripherals.GPIO27, Level::High, OutputConfig::default());
 
     let dc = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());
 
@@ -206,6 +207,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             button_b,
             joyc,
             &mut lcd,
+            backlight,
             &mut flash,
         ),
         battery_task,

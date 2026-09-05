@@ -6,7 +6,7 @@ use core::{
 use embassy_futures::{join::join, select::select4};
 use embassy_time::{Duration, Timer};
 use embedded_hal::i2c::I2c as I2cTrait;
-use esp_hal::gpio::Input;
+use esp_hal::gpio::{Input, Output};
 use esp_println::println;
 use trouble_host::prelude::*;
 
@@ -16,7 +16,9 @@ use embedded_storage_async::nor_flash::NorFlash;
 use crate::display::{self, Status};
 use crate::{battery, bond_store};
 use crate::{
-    config::{Action, MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT},
+    config::{
+        Action, DISPLAY_TIMEOUT_SECONDS, MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT,
+    },
     input::{InputEngine, InputSample, InputState},
     mini_joyc::MiniJoyC,
     mouse::MouseMapper,
@@ -188,6 +190,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
     mut button_b: Input<'d>,
     mut joyc: MiniJoyC<I2C>,
     display: &mut D,
+    mut backlight: Output<'d>,
     storage: &mut S,
 ) where
     C: Controller,
@@ -248,6 +251,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
     let peripheral_task = async {
         loop {
             println!("advertising...");
+            backlight.set_high();
             display::render(
                 display,
                 Status::Waiting,
@@ -301,6 +305,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
                 &mut button_a,
                 &mut button_b,
                 &mut joyc,
+                &mut backlight,
                 &mut profile_manager,
                 display,
             );
@@ -491,6 +496,7 @@ async fn input_task<P, I2C, D>(
     button_a: &mut Input<'_>,
     button_b: &mut Input<'_>,
     joyc: &mut MiniJoyC<I2C>,
+    backlight: &mut Output<'_>,
     profiles: &mut ProfileManager,
     display: &mut D,
 ) where
@@ -514,6 +520,8 @@ async fn input_task<P, I2C, D>(
     let mut input = InputEngine::new();
     let mut previous_mouse_buttons = 0u8;
     let mut now_ms = 0u64;
+    let mut last_activity_ms = 0u64;
+    let mut display_awake = true;
 
     loop {
         let profile = profiles.current();
@@ -531,7 +539,10 @@ async fn input_task<P, I2C, D>(
 
                 let outcome = input.update(sample, &profile.input, &profile.scroll, now_ms);
 
+                let mut activity = sample.buttons.button_mask() != 0;
+
                 if let Some(event) = outcome.event {
+                    activity = true;
                     match event.action {
                         Action::KeyboardKey(key) => {
                             send_key(&keyboard_report, conn, key).await;
@@ -546,6 +557,11 @@ async fn input_task<P, I2C, D>(
                             let profile = profiles.next();
 
                             println!("profile={}", profile.label);
+
+                            if !display_awake {
+                                backlight.set_high();
+                                display_awake = true;
+                            }
 
                             display::render(
                                 display,
@@ -565,6 +581,7 @@ async fn input_task<P, I2C, D>(
                     let wheel = mapper.update_scroll(joy, &profile.scroll, profile.mouse.poll_hz);
 
                     if wheel != 0 {
+                        activity = true;
                         send_mouse_report(&mouse_report, conn, previous_mouse_buttons, 0, 0, wheel)
                             .await;
                     }
@@ -572,6 +589,7 @@ async fn input_task<P, I2C, D>(
                     let pointer = mapper.update_pointer(joy, &profile.mouse, profile.orientation);
 
                     if pointer.dx != 0 || pointer.dy != 0 || previous_mouse_buttons != 0 {
+                        activity = true;
                         send_mouse_report(
                             &mouse_report,
                             conn,
@@ -582,6 +600,29 @@ async fn input_task<P, I2C, D>(
                         )
                         .await;
                     }
+                }
+
+                if activity {
+                    last_activity_ms = now_ms;
+
+                    if !display_awake {
+                        backlight.set_high();
+                        display_awake = true;
+                        display::render(
+                            display,
+                            Status::Connected,
+                            profiles.current().label,
+                            battery::percent(),
+                            None,
+                        )
+                        .unwrap();
+                    }
+                } else if display_awake
+                    && now_ms.saturating_sub(last_activity_ms)
+                        >= DISPLAY_TIMEOUT_SECONDS.saturating_mul(1_000)
+                {
+                    backlight.set_low();
+                    display_awake = false;
                 }
 
                 now_ms = now_ms.saturating_add(profile.mouse.poll_interval_us / 1_000);

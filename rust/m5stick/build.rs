@@ -260,6 +260,9 @@ pub static PROFILES: [ProfileConfig; PROFILE_COUNT] = [
 {profiles}
 ];
 
+pub const DISPLAY_TIMEOUT_SECONDS: u64 = {display_timeout_seconds};
+pub const DISPLAY_BRIGHTNESS: u8 = {display_brightness};
+
 pub const BATTERY_RAW_EMPTY: u16 = {battery_raw_empty};
 pub const BATTERY_RAW_FULL: u16 = {battery_raw_full};
 
@@ -272,6 +275,8 @@ pub const BATTERY_POLL_SECONDS: u64 = {battery_poll_seconds};
         profile_count = config.general.profile_order.len(),
         default_profile_index = default_profile_index,
         profiles = profile_entries.join(",\n"),
+        display_timeout_seconds = config.display.timeout_seconds,
+        display_brightness = config.display.brightness,
         battery_raw_empty = config.battery.raw_empty,
         battery_raw_full = config.battery.raw_full,
         battery_empty_mv = config.battery.empty_mv,
