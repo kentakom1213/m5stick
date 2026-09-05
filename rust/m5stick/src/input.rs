@@ -182,9 +182,11 @@ impl InputEngine {
         let mut selected_bits = 0;
 
         for combo in config.combos {
-            if (mask & combo.buttons) != combo.buttons
-                || !self.within_combo_window(combo, config.combo_window_ms)
-            {
+            if (mask & combo.buttons) != combo.buttons {
+                continue;
+            }
+
+            if combo.hold_ms == 0 && !self.within_combo_window(combo, config.combo_window_ms) {
                 continue;
             }
 

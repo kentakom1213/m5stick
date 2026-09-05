@@ -22,6 +22,7 @@ pub fn render<D>(
     profile_label: &str,
     battery: u8,
     peer_address: Option<&str>,
+    joyc_ok: bool,
 ) -> Result<(), D::Error>
 where
     D: DrawTarget<Color = Rgb565>,
@@ -37,6 +38,8 @@ where
     let battery_style = MonoTextStyle::new(&FONT_10X20, battery_color(battery));
 
     let ok_style = MonoTextStyle::new(&FONT_6X10, Rgb565::GREEN);
+
+    let ng_style = MonoTextStyle::new(&FONT_6X10, Rgb565::RED);
 
     let status_text = match status {
         Status::Waiting => "WAITING",
@@ -61,7 +64,14 @@ where
     Text::new("OK", Point::new(70, 155), ok_style).draw(display)?;
 
     Text::new("JoyC", Point::new(10, 180), large_white_style).draw(display)?;
-    Text::new("OK", Point::new(70, 180), ok_style).draw(display)?;
+
+    let (joyc_text, joyc_style) = if joyc_ok {
+        ("OK", ok_style)
+    } else {
+        ("NG", ng_style)
+    };
+
+    Text::new(joyc_text, Point::new(70, 180), joyc_style).draw(display)?;
 
     Ok(())
 }

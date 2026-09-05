@@ -145,15 +145,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
         );
     }
 
-    display::render(
-        &mut lcd,
-        display::Status::Waiting,
-        config::PROFILES[config::DEFAULT_PROFILE_INDEX].label,
-        battery::percent(),
-        None,
-    )
-    .unwrap();
-
     // BLE controller
     let connector = BleConnector::new(peripherals.BT, Default::default()).unwrap();
 
@@ -175,7 +166,18 @@ async fn main(_spawner: embassy_executor::Spawner) {
     .with_sda(peripherals.GPIO0)
     .with_scl(peripherals.GPIO26);
 
-    let joyc = MiniJoyC::new(i2c);
+    let mut joyc = MiniJoyC::new(i2c);
+    let joyc_ok = joyc.read().is_ok();
+
+    display::render(
+        &mut lcd,
+        display::Status::Waiting,
+        config::PROFILES[config::DEFAULT_PROFILE_INDEX].label,
+        battery::percent(),
+        None,
+        joyc_ok,
+    )
+    .unwrap();
 
     // メモリ
     let mut flash = embassy_embedded_hal::adapter::BlockingAsync::new(

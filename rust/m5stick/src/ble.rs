@@ -239,6 +239,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
     println!("GATT server initialized");
 
     let mut profile_manager = ProfileManager::new();
+    let mut joyc_ok = false;
 
     let runner_task = async {
         loop {
@@ -252,12 +253,14 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
         loop {
             println!("advertising...");
             backlight.set_high();
+            joyc_ok = joyc.read().is_ok();
             display::render(
                 display,
                 Status::Waiting,
                 profile_manager.current().label,
                 battery::percent(),
                 None,
+                joyc_ok,
             )
             .unwrap();
 
@@ -286,6 +289,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
                 profile_manager.current().label,
                 battery::percent(),
                 Some(&peer_address),
+                joyc_ok,
             )
             .unwrap();
 
@@ -305,6 +309,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
                 &mut button_a,
                 &mut button_b,
                 &mut joyc,
+                &mut joyc_ok,
                 &mut backlight,
                 &mut profile_manager,
                 display,
@@ -321,6 +326,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
                 profile_manager.current().label,
                 battery::percent(),
                 None,
+                joyc_ok,
             )
             .unwrap();
         }
@@ -496,6 +502,7 @@ async fn input_task<P, I2C, D>(
     button_a: &mut Input<'_>,
     button_b: &mut Input<'_>,
     joyc: &mut MiniJoyC<I2C>,
+    joyc_ok: &mut bool,
     backlight: &mut Output<'_>,
     profiles: &mut ProfileManager,
     display: &mut D,
@@ -528,6 +535,21 @@ async fn input_task<P, I2C, D>(
 
         match joyc.read() {
             Ok(joy) => {
+                if !*joyc_ok {
+                    *joyc_ok = true;
+                    backlight.set_high();
+                    display_awake = true;
+                    display::render(
+                        display,
+                        Status::Connected,
+                        profiles.current().label,
+                        battery::percent(),
+                        None,
+                        *joyc_ok,
+                    )
+                    .unwrap();
+                }
+
                 let sample = InputSample {
                     buttons: InputState {
                         button_a: button_a.is_low(),
@@ -569,6 +591,7 @@ async fn input_task<P, I2C, D>(
                                 profile.label,
                                 battery::percent(),
                                 None,
+                                *joyc_ok,
                             )
                             .unwrap();
                         }
@@ -614,6 +637,7 @@ async fn input_task<P, I2C, D>(
                             profiles.current().label,
                             battery::percent(),
                             None,
+                            *joyc_ok,
                         )
                         .unwrap();
                     }
@@ -630,6 +654,21 @@ async fn input_task<P, I2C, D>(
             }
 
             Err(err) => {
+                if *joyc_ok {
+                    *joyc_ok = false;
+                    backlight.set_high();
+                    display_awake = true;
+                    display::render(
+                        display,
+                        Status::Connected,
+                        profiles.current().label,
+                        battery::percent(),
+                        None,
+                        *joyc_ok,
+                    )
+                    .unwrap();
+                }
+
                 println!("Mini JoyC error: {:?}", err);
                 Timer::after(Duration::from_millis(50)).await;
             }
