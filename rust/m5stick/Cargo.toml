@@ -26,7 +26,9 @@ embassy-time = "0.5.0"
 esp-alloc = "0.10.0"
 esp-radio = { version = "0.18.0", features = ["esp32", "ble", "unstable"] }
 esp-rtos = { version = "0.3.0", features = ["esp32", "embassy", "esp-alloc", "esp-radio"] }
-trouble-host = "0.6.0"
+trouble-host = { version = "0.6.0", features = ["security"] }
+embassy-sync = "0.7"
+static_cell = "2"
 
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html

@@ -33,9 +33,7 @@ fn axis_to_delta(value: i8) -> i8 {
     let normalized = magnitude - DEAD_ZONE;
     let range = MAX_INPUT - DEAD_ZONE;
 
-    let speed =
-        normalized * normalized * MAX_SPEED
-        / (range * range);
+    let speed = normalized * normalized * MAX_SPEED / (range * range);
 
     (sign * speed) as i8
 }
