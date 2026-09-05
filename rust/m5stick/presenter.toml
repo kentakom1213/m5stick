@@ -1,0 +1,19 @@
+[mouse]
+poll_hz = 125
+
+dead_zone = 10
+
+# 最大カーソル速度．poll_hzを変えても速度は変わらない
+max_speed_px_per_sec = 1600.0
+
+# 0.0 = 線形
+# 1.0 = 二次カーブ
+# 発表用途では高めの方が微調整しやすい
+curve_weight = 0.85
+
+# 0.0に近いほど滑らかだが追従が遅い
+# 1.0なら平滑化なし
+smoothing = 0.35
+
+invert_x = false
+invert_y = true

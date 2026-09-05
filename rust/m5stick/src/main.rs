@@ -3,6 +3,7 @@
 
 mod ble;
 mod bond_store;
+mod config;
 mod display;
 mod mini_joyc;
 mod mouse;

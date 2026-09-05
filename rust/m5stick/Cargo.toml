@@ -45,4 +45,8 @@ opt-level = "s"
 codegen-units = 1     # LLVM can perform better optimizations using a single thread
 debug         = 2     # prefer slower builds but better debugging experience
 lto           = 'fat'
-opt-level     = 's'
+opt-level     = 3
+
+[build-dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.5"

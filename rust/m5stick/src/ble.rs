@@ -15,14 +15,16 @@ use embedded_storage_async::nor_flash::NorFlash;
 
 use crate::bond_store;
 use crate::display::{self, Status};
-use crate::{mini_joyc::MiniJoyC, mouse::from_joystick, presenter::PresenterAction};
+use crate::{
+    config::MOUSE_POLL_INTERVAL_US, mini_joyc::MiniJoyC, mouse::MouseMapper,
+    presenter::PresenterAction,
+};
 
 const CONNECTIONS_MAX: usize = 1;
 const L2CAP_CHANNELS_MAX: usize = 4;
 
 const DEVICE_NAME: &str = "M5Stick Presenter";
 
-const MOUSE_POLL_INTERVAL_MS: u64 = 10; // 100 Hz
 const BUTTON_POLL_INTERVAL_MS: u64 = 15;
 const KEY_PRESS_DURATION_MS: u64 = 20;
 
@@ -482,12 +484,14 @@ async fn mouse_task<P, I2C>(
 
     let report_characteristic = server.hid_service.mouse_report;
 
+    let mut mapper = MouseMapper::new();
+
     let mut previous_pressed = false;
 
     loop {
         match joyc.read() {
             Ok(joy) => {
-                let mouse = from_joystick(joy);
+                let mouse = mapper.update(joy);
 
                 let should_send =
                     mouse.dx != 0 || mouse.dy != 0 || mouse.left_pressed != previous_pressed;
@@ -516,7 +520,6 @@ async fn mouse_task<P, I2C>(
             }
         }
 
-        // 実機では100 Hzがちょうどよかった．
-        Timer::after(Duration::from_millis(MOUSE_POLL_INTERVAL_MS)).await;
+        Timer::after(Duration::from_micros(MOUSE_POLL_INTERVAL_US)).await;
     }
 }
