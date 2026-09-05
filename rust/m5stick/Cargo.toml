@@ -1,11 +1,11 @@
 [package]
 edition      = "2024"
-name         = "m5stick-test"
+name         = "m5stick"
 rust-version = "1.95"
 version      = "0.1.0"
 
 [[bin]]
-name = "m5stick-test"
+name = "m5stick"
 path = "./src/main.rs"
 
 [dependencies]

@@ -1302,7 +1302,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "m5stick-test"
+name = "m5stick"
 version = "0.1.0"
 dependencies = [
  "critical-section",
