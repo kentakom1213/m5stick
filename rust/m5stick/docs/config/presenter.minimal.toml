@@ -1,0 +1,70 @@
+# Minimal config shape. Copy sections from presenter.example.toml when adding profiles.
+
+[general]
+default_profile = "linux"
+profile_order = ["linux"]
+
+[display]
+timeout_seconds = 15
+brightness = 40
+show_battery = true
+show_connection = true
+show_profile = true
+
+[scroll]
+dead_zone = 12
+speed = 8
+horizontal = false
+invert_vertical = false
+invert_horizontal = false
+
+[input]
+combo_window_ms = 80
+tap_max_ms = 300
+default_hold_ms = 600
+
+[input.button_a]
+tap = "RightArrow"
+hold_joy = "Scroll"
+
+[input.button_b]
+tap = "LeftArrow"
+
+[input.joy_click]
+tap = "MouseLeft"
+
+[[input.combo]]
+buttons = ["button_a", "joy_click"]
+action = "MouseRight"
+
+[[input.combo]]
+buttons = ["button_b", "joy_click"]
+action = "MouseMiddle"
+
+[[input.combo]]
+buttons = ["button_a", "button_b"]
+hold_ms = 800
+action = "NextProfile"
+
+[profiles.linux]
+label = "Linux"
+orientation = "normal"
+
+[profiles.linux.mouse]
+poll_hz = 150
+dead_zone = 6
+base_speed_px_per_sec = 300.0
+max_speed_px_per_sec = 1900.0
+gain_rise_per_sec = 6.0
+gain_fall_per_sec = 6.0
+curve_weight = 0.45
+smoothing = 0.55
+invert_x = false
+invert_y = true
+
+[battery]
+raw_empty = 1900
+raw_full = 2430
+empty_mv = 3300
+full_mv = 4200
+poll_seconds = 5

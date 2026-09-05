@@ -720,3 +720,20 @@ config.rs
 7. 選択中プロファイルのFlash保存を追加する．
 
 最初からFlash保存まで含める必要はない．入力仕様とプロファイル選択の境界を先に固める方が，後続の変更を小さくできる．
+
+## 20. TOMLファイルの配置
+
+TOML設定ファイルは以下の配置とする．
+
+```text
+presenter.toml
+-> 実際に `build.rs` が読むアクティブな設定
+
+docs/config/presenter.example.toml
+-> 複数プロファイルを含む標準的な設定例
+
+docs/config/presenter.minimal.toml
+-> 新しい設定を作るときの最小構成
+```
+
+通常の調整はルートの `presenter.toml` を編集する．設定例を更新した場合は，必要に応じてルートの `presenter.toml` へ反映する．
