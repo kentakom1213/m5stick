@@ -9,6 +9,7 @@ mod display;
 mod mini_joyc;
 mod mouse;
 mod presenter;
+mod profile;
 
 use embassy_futures::join::join;
 use embassy_time::{Duration, Timer};
