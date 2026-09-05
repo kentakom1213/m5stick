@@ -27,6 +27,10 @@ esp-alloc = "0.10.0"
 esp-radio = { version = "0.18.0", features = ["esp32", "ble", "unstable"] }
 esp-rtos = { version = "0.3.0", features = ["esp32", "embassy", "esp-alloc", "esp-radio"] }
 trouble-host = { version = "0.6.0", features = ["security"] }
+rand_chacha = { version = "0.3", default-features = false }
+rand_core = { version = "0.6", default-features = false }
+heapless = "0.8"
+nb = "1"
 embassy-sync = "0.7"
 static_cell = "2"
 esp-storage = { version = "0.9", features = ["esp32"] }

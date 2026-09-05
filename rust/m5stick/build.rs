@@ -4,6 +4,7 @@ use std::{env, fs, path::PathBuf};
 #[derive(Debug, Deserialize)]
 struct Config {
     mouse: MouseConfig,
+    battery: BatteryConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -15,6 +16,15 @@ struct MouseConfig {
     smoothing: f64,
     invert_x: bool,
     invert_y: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct BatteryConfig {
+    raw_empty: u16,
+    raw_full: u16,
+    empty_mv: u16,
+    full_mv: u16,
+    poll_seconds: u64,
 }
 
 fn main() {
@@ -39,7 +49,24 @@ fn generate_presenter_config() {
 
     let mouse = config.mouse;
 
+    let battery = config.battery;
+
     assert!(mouse.poll_hz > 0, "mouse.poll_hz must be greater than 0");
+
+    assert!(
+        battery.raw_full > battery.raw_empty,
+        "battery.raw_full must be greater than battery.raw_empty"
+    );
+
+    assert!(
+        battery.full_mv > battery.empty_mv,
+        "battery.full_mv must be greater than battery.empty_mv"
+    );
+
+    assert!(
+        battery.poll_seconds > 0,
+        "battery.poll_seconds must be greater than 0"
+    );
 
     assert!(
         (0..127).contains(&mouse.dead_zone),
@@ -89,6 +116,14 @@ pub const MOUSE_SMOOTHING_Q15: i32 = {smoothing_q15};
 
 pub const MOUSE_INVERT_X: bool = {invert_x};
 pub const MOUSE_INVERT_Y: bool = {invert_y};
+
+pub const BATTERY_RAW_EMPTY: u16 = {battery_raw_empty};
+pub const BATTERY_RAW_FULL: u16 = {battery_raw_full};
+
+pub const BATTERY_EMPTY_MV: u16 = {battery_empty_mv};
+pub const BATTERY_FULL_MV: u16 = {battery_full_mv};
+
+pub const BATTERY_POLL_SECONDS: u64 = {battery_poll_seconds};
 "#,
         poll_hz = mouse.poll_hz,
         interval_us = interval_us,
@@ -98,6 +133,11 @@ pub const MOUSE_INVERT_Y: bool = {invert_y};
         smoothing_q15 = smoothing_q15,
         invert_x = mouse.invert_x,
         invert_y = mouse.invert_y,
+        battery_raw_empty = battery.raw_empty,
+        battery_raw_full = battery.raw_full,
+        battery_empty_mv = battery.empty_mv,
+        battery_full_mv = battery.full_mv,
+        battery_poll_seconds = battery.poll_seconds,
     );
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set"));

@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+mod battery;
 mod ble;
 mod bond_store;
 mod config;
@@ -9,9 +10,12 @@ mod mini_joyc;
 mod mouse;
 mod presenter;
 
+use embassy_futures::join::join;
+use embassy_time::{Duration, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 
 use esp_hal::{
+    analog::adc::{Adc, AdcConfig, Attenuation},
     clock::CpuClock,
     delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig},
@@ -35,6 +39,7 @@ use mipidsi::{
 
 use esp_println::println;
 use esp_radio::ble::controller::BleConnector;
+use rand_core::SeedableRng;
 use trouble_host::prelude::ExternalController;
 
 use mini_joyc::MiniJoyC;
@@ -52,7 +57,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 async fn main(_spawner: embassy_executor::Spawner) {
     println!("starting M5Stick Presenter");
 
-    let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
+    let mut peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
 
     esp_alloc::heap_allocator!(size: 72 * 1024);
 
@@ -96,7 +101,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         .init(&mut lcd_delay)
         .unwrap();
 
-    display::render(&mut lcd, display::Status::Waiting).unwrap();
+    display::render(&mut lcd, display::Status::Waiting, battery::percent(), None).unwrap();
 
     // esp-rtos / Embassy
     let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -105,10 +110,29 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     esp_rtos::start(timg0.timer0, sw_int.software_interrupt0);
 
-    // BLE pairing用乱数
-    let _trng_source = TrngSource::new(peripherals.RNG, peripherals.ADC1);
+    // BLE pairing用乱数．
+    // ADC1はバッテリー測定で使うため，一時的にTRNGへ貸してseedだけ取得する．
+    let trng_source = TrngSource::new(peripherals.RNG, peripherals.ADC1.reborrow());
 
-    let mut trng = Trng::try_new().unwrap();
+    let trng = Trng::try_new().unwrap();
+
+    let mut security_seed = [0u8; 32];
+
+    trng.read(&mut security_seed);
+
+    drop(trng);
+
+    if trng_source.try_disable().is_err() {
+        panic!("failed to release ADC1 from TRNG");
+    }
+
+    let mut security_rng = rand_chacha::ChaCha20Rng::from_seed(security_seed);
+
+    let mut adc_config = AdcConfig::new();
+
+    let mut battery_pin = adc_config.enable_pin(peripherals.GPIO38, Attenuation::_11dB);
+
+    let mut battery_adc = Adc::new(peripherals.ADC1, adc_config);
 
     // BLE controller
     let connector = BleConnector::new(peripherals.BT, Default::default()).unwrap();
@@ -138,8 +162,34 @@ async fn main(_spawner: embassy_executor::Spawner) {
         esp_storage::FlashStorage::new(peripherals.FLASH),
     );
 
-    ble::run(
-        controller, &mut trng, button_a, button_b, joyc, &mut lcd, &mut flash,
+    let battery_task = async {
+        loop {
+            if let Ok(raw) = nb::block!(battery_adc.read_oneshot(&mut battery_pin)) {
+                battery::update(raw);
+
+                println!(
+                    "battery raw={} level={}% mv~{}",
+                    raw,
+                    battery::percent(),
+                    battery::millivolts(),
+                );
+            }
+
+            Timer::after(Duration::from_secs(config::BATTERY_POLL_SECONDS)).await;
+        }
+    };
+
+    join(
+        ble::run(
+            controller,
+            &mut security_rng,
+            button_a,
+            button_b,
+            joyc,
+            &mut lcd,
+            &mut flash,
+        ),
+        battery_task,
     )
     .await;
 }

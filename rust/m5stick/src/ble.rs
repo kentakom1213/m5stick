@@ -1,20 +1,20 @@
 use core::{
-    fmt::Debug,
+    fmt::{Debug, Write},
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use embassy_futures::{join::join, select::select3};
+use embassy_futures::{join::join, select::select4};
 use embassy_time::{Duration, Timer};
 use embedded_hal::i2c::I2c as I2cTrait;
-use esp_hal::{gpio::Input, rng::Trng};
+use esp_hal::gpio::Input;
 use esp_println::println;
 use trouble_host::prelude::*;
 
 use embedded_graphics::{pixelcolor::Rgb565, prelude::DrawTarget};
 use embedded_storage_async::nor_flash::NorFlash;
 
-use crate::bond_store;
 use crate::display::{self, Status};
+use crate::{battery, bond_store};
 use crate::{
     config::MOUSE_POLL_INTERVAL_US, mini_joyc::MiniJoyC, mouse::MouseMapper,
     presenter::PresenterAction,
@@ -22,6 +22,7 @@ use crate::{
 
 const CONNECTIONS_MAX: usize = 1;
 const L2CAP_CHANNELS_MAX: usize = 4;
+const BONDS_MAX: usize = 4;
 
 const DEVICE_NAME: &str = "M5Stick Presenter";
 
@@ -177,9 +178,9 @@ struct BatteryService {
     level: u8,
 }
 
-pub async fn run<'d, C, I2C, D, S>(
+pub async fn run<'d, C, I2C, D, S, RNG>(
     controller: C,
-    trng: &mut Trng,
+    rng: &mut RNG,
     mut button_a: Input<'d>,
     mut button_b: Input<'d>,
     mut joyc: MiniJoyC<I2C>,
@@ -192,6 +193,7 @@ pub async fn run<'d, C, I2C, D, S>(
     D: DrawTarget<Color = Rgb565>,
     D::Error: Debug,
     S: NorFlash,
+    RNG: rand_core::RngCore + rand_core::CryptoRng,
 {
     let address = Address::random([0x42, 0x11, 0x22, 0x33, 0x44, 0xc0]);
 
@@ -202,16 +204,16 @@ pub async fn run<'d, C, I2C, D, S>(
 
     let builder = trouble_host::new(controller, &mut resources)
         .set_random_address(address)
-        .set_random_generator_seed(trng);
+        .set_random_generator_seed(rng);
 
-    let mut bond_stored = false;
+    let bonds = bond_store::load_all::<_, BONDS_MAX>(storage).await;
 
-    if let Some(bond) = bond_store::load(storage).await {
-        println!("loaded bond information");
+    if !bonds.is_empty() {
+        println!("loaded {} bond information", bonds.len());
 
-        builder.add_bond_information(bond).unwrap();
-
-        bond_stored = true;
+        for bond in bonds {
+            builder.add_bond_information(bond).unwrap();
+        }
     } else {
         println!("no bond information");
     }
@@ -241,7 +243,7 @@ pub async fn run<'d, C, I2C, D, S>(
     let peripheral_task = async {
         loop {
             println!("advertising...");
-            display::render(display, Status::Waiting).unwrap();
+            display::render(display, Status::Waiting, battery::percent(), None).unwrap();
 
             let conn = match advertise(&mut peripheral, &server).await {
                 Ok(conn) => conn,
@@ -254,20 +256,42 @@ pub async fn run<'d, C, I2C, D, S>(
             };
 
             println!("connection established");
-            display::render(display, Status::Connected).unwrap();
 
-            conn.raw().set_bondable(!bond_stored).unwrap();
+            MOUSE_NOTIFY_ENABLED.store(false, Ordering::Release);
+            KEYBOARD_NOTIFY_ENABLED.store(false, Ordering::Release);
 
-            let gatt = gatt_events_task(storage, &server, &conn, &mut bond_stored);
+            let mut peer_address = heapless::String::<24>::new();
+
+            format_peer_address(&mut peer_address, conn.raw().peer_identity().bd_addr);
+
+            display::render(
+                display,
+                Status::Connected,
+                battery::percent(),
+                Some(&peer_address),
+            )
+            .unwrap();
+
+            let battery_level = battery::percent();
+
+            server
+                .set(&server.battery_service.level, &battery_level)
+                .unwrap();
+
+            conn.raw().set_bondable(true).unwrap();
+
+            let gatt = gatt_events_task(storage, &server, &conn);
 
             let presenter = presenter_task(&server, &conn, &mut button_a, &mut button_b);
 
             let mouse = mouse_task(&server, &conn, &mut joyc);
 
-            select3(gatt, presenter, mouse).await;
+            let battery_service = battery_service_task(&server, &conn);
+
+            select4(gatt, presenter, mouse, battery_service).await;
 
             println!("connection ended");
-            display::render(display, Status::Waiting).unwrap();
+            display::render(display, Status::Waiting, battery::percent(), None).unwrap();
         }
     };
 
@@ -308,11 +332,46 @@ async fn advertise<'values, 'server, C: Controller>(
     Ok(advertiser.accept().await?.with_attribute_server(server)?)
 }
 
+fn format_peer_address(output: &mut heapless::String<24>, address: BdAddr) {
+    let raw = address.raw();
+
+    write!(
+        output,
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        raw[5], raw[4], raw[3], raw[2], raw[1], raw[0],
+    )
+    .unwrap();
+}
+
+async fn battery_service_task<P: PacketPool>(
+    server: &Server<'_>,
+    conn: &GattConnection<'_, '_, P>,
+) {
+    let characteristic = server.battery_service.level;
+
+    let mut previous = u8::MAX;
+
+    loop {
+        let level = crate::battery::percent();
+
+        if level != previous {
+            server.set(&characteristic, &level).unwrap();
+
+            let _ = characteristic.notify(conn, &level).await;
+
+            previous = level;
+
+            println!("battery={}%", level);
+        }
+
+        Timer::after(Duration::from_secs(5)).await;
+    }
+}
+
 async fn gatt_events_task<P: PacketPool, S: NorFlash>(
     storage: &mut S,
     server: &Server<'_>,
     conn: &GattConnection<'_, '_, P>,
-    bond_stored: &mut bool,
 ) {
     let mouse = server.hid_service.mouse_report;
 
@@ -343,8 +402,6 @@ async fn gatt_events_task<P: PacketPool, S: NorFlash>(
                 if let Some(bond) = bond {
                     match bond_store::store(storage, &bond).await {
                         Ok(()) => {
-                            *bond_stored = true;
-
                             println!("bond information stored");
                         }
 

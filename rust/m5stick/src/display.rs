@@ -1,3 +1,5 @@
+use core::fmt::Write;
+
 use embedded_graphics::{
     mono_font::{
         MonoTextStyle,
@@ -14,7 +16,12 @@ pub enum Status {
     Connected,
 }
 
-pub fn render<D>(display: &mut D, status: Status) -> Result<(), D::Error>
+pub fn render<D>(
+    display: &mut D,
+    status: Status,
+    battery: u8,
+    peer_address: Option<&str>,
+) -> Result<(), D::Error>
 where
     D: DrawTarget<Color = Rgb565>,
 {
@@ -41,13 +48,32 @@ where
 
     Text::new(status_text, Point::new(10, 60), status_style).draw(display)?;
 
-    Text::new("A  > Next", Point::new(10, 100), text_style).draw(display)?;
+    if let Some(peer_address) = peer_address {
+        Text::new(peer_address, Point::new(10, 80), text_style).draw(display)?;
+    }
 
-    Text::new("B  < Back", Point::new(10, 120), text_style).draw(display)?;
+    let mut battery_text = heapless::String::<16>::new();
 
-    Text::new("Joy: Pointer", Point::new(10, 150), text_style).draw(display)?;
+    write!(battery_text, "[{}] {}%", battery_icon(battery), battery).unwrap();
 
-    Text::new("Press: Click", Point::new(10, 170), text_style).draw(display)?;
+    Text::new(&battery_text, Point::new(10, 105), title_style).draw(display)?;
+
+    Text::new("A  > Next", Point::new(10, 135), text_style).draw(display)?;
+
+    Text::new("B  < Back", Point::new(10, 155), text_style).draw(display)?;
+
+    Text::new("Joy: Pointer", Point::new(10, 180), text_style).draw(display)?;
+
+    Text::new("Press: Click", Point::new(10, 200), text_style).draw(display)?;
 
     Ok(())
+}
+
+fn battery_icon(percent: u8) -> &'static str {
+    match percent {
+        75..=100 => "###",
+        40..=74 => "## ",
+        10..=39 => "#  ",
+        _ => "   ",
+    }
 }

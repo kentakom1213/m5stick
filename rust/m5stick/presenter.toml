@@ -9,7 +9,7 @@ max_speed_px_per_sec = 1600.0
 # 0.0 = 線形
 # 1.0 = 二次カーブ
 # 発表用途では高めの方が微調整しやすい
-curve_weight = 0.85
+curve_weight = 0.7
 
 # 0.0に近いほど滑らかだが追従が遅い
 # 1.0なら平滑化なし
@@ -17,3 +17,12 @@ smoothing = 0.35
 
 invert_x = false
 invert_y = true
+
+[battery]
+raw_empty = 1900
+raw_full = 2430
+
+empty_mv = 3300
+full_mv = 4200
+
+poll_seconds = 5

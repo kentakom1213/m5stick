@@ -1,6 +1,8 @@
 use core::ops::Range;
 
 use embedded_storage_async::nor_flash::NorFlash;
+use esp_println::println;
+use heapless::Vec;
 use sequential_storage::{
     cache::NoCache,
     map::{Key, SerializationError, Value},
@@ -89,8 +91,6 @@ where
 {
     let range = storage_range();
 
-    sequential_storage::erase_all(storage, range.clone()).await?;
-
     let mut buffer = [0u8; 32];
 
     let key = StoredAddr(info.identity.bd_addr);
@@ -113,24 +113,27 @@ where
     Ok(())
 }
 
-pub async fn load<S>(storage: &mut S) -> Option<BondInformation>
+pub async fn load_all<S, const N: usize>(storage: &mut S) -> Vec<BondInformation, N>
 where
     S: NorFlash,
 {
+    let mut bonds = Vec::new();
     let mut buffer = [0u8; 32];
     let mut cache = NoCache::new();
 
-    let mut iter = sequential_storage::map::fetch_all_items::<StoredAddr, _, _>(
+    let Ok(mut iter) = sequential_storage::map::fetch_all_items::<StoredAddr, _, _>(
         storage,
         storage_range(),
         &mut cache,
         &mut buffer,
     )
     .await
-    .ok()?;
+    else {
+        return bonds;
+    };
 
-    while let Some((key, value)) = iter.next::<StoredBondInformation>(&mut buffer).await.ok()? {
-        return Some(BondInformation {
+    while let Ok(Some((key, value))) = iter.next::<StoredBondInformation>(&mut buffer).await {
+        let bond = BondInformation {
             identity: Identity {
                 bd_addr: key.0,
                 irk: None,
@@ -138,8 +141,17 @@ where
             security_level: value.security_level,
             is_bonded: true,
             ltk: value.ltk,
-        });
+        };
+
+        if let Some(index) = bonds
+            .iter()
+            .position(|stored| stored.identity.match_identity(&bond.identity))
+        {
+            bonds[index] = bond;
+        } else if bonds.push(bond).is_err() {
+            println!("too many stored bonds");
+        }
     }
 
-    None
+    bonds
 }
