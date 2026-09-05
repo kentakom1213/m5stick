@@ -11,7 +11,9 @@ use esp_println::println;
 use trouble_host::prelude::*;
 
 use embedded_graphics::{pixelcolor::Rgb565, prelude::DrawTarget};
+use embedded_storage_async::nor_flash::NorFlash;
 
+use crate::bond_store;
 use crate::display::{self, Status};
 use crate::{mini_joyc::MiniJoyC, mouse::from_joystick, presenter::PresenterAction};
 
@@ -173,19 +175,21 @@ struct BatteryService {
     level: u8,
 }
 
-pub async fn run<'d, C, I2C, D>(
+pub async fn run<'d, C, I2C, D, S>(
     controller: C,
     trng: &mut Trng,
     mut button_a: Input<'d>,
     mut button_b: Input<'d>,
     mut joyc: MiniJoyC<I2C>,
     display: &mut D,
+    storage: &mut S,
 ) where
     C: Controller,
     I2C: I2cTrait,
     I2C::Error: Debug,
     D: DrawTarget<Color = Rgb565>,
     D::Error: Debug,
+    S: NorFlash,
 {
     let address = Address::random([0x42, 0x11, 0x22, 0x33, 0x44, 0xc0]);
 
@@ -197,6 +201,18 @@ pub async fn run<'d, C, I2C, D>(
     let builder = trouble_host::new(controller, &mut resources)
         .set_random_address(address)
         .set_random_generator_seed(trng);
+
+    let mut bond_stored = false;
+
+    if let Some(bond) = bond_store::load(storage).await {
+        println!("loaded bond information");
+
+        builder.add_bond_information(bond).unwrap();
+
+        bond_stored = true;
+    } else {
+        println!("no bond information");
+    }
 
     let stack = builder.build();
 
@@ -238,9 +254,9 @@ pub async fn run<'d, C, I2C, D>(
             println!("connection established");
             display::render(display, Status::Connected).unwrap();
 
-            conn.raw().set_bondable(true).unwrap();
+            conn.raw().set_bondable(!bond_stored).unwrap();
 
-            let gatt = gatt_events_task(&server, &conn);
+            let gatt = gatt_events_task(storage, &server, &conn, &mut bond_stored);
 
             let presenter = presenter_task(&server, &conn, &mut button_a, &mut button_b);
 
@@ -290,7 +306,12 @@ async fn advertise<'values, 'server, C: Controller>(
     Ok(advertiser.accept().await?.with_attribute_server(server)?)
 }
 
-async fn gatt_events_task<P: PacketPool>(server: &Server<'_>, conn: &GattConnection<'_, '_, P>) {
+async fn gatt_events_task<P: PacketPool, S: NorFlash>(
+    storage: &mut S,
+    server: &Server<'_>,
+    conn: &GattConnection<'_, '_, P>,
+    bond_stored: &mut bool,
+) {
     let mouse = server.hid_service.mouse_report;
 
     let keyboard = server.hid_service.keyboard_report;
@@ -311,8 +332,25 @@ async fn gatt_events_task<P: PacketPool>(server: &Server<'_>, conn: &GattConnect
                 break;
             }
 
-            GattConnectionEvent::PairingComplete { security_level, .. } => {
+            GattConnectionEvent::PairingComplete {
+                security_level,
+                bond,
+            } => {
                 println!("pairing complete: {:?}", security_level);
+
+                if let Some(bond) = bond {
+                    match bond_store::store(storage, &bond).await {
+                        Ok(()) => {
+                            *bond_stored = true;
+
+                            println!("bond information stored");
+                        }
+
+                        Err(err) => {
+                            println!("failed to store bond: {:?}", err);
+                        }
+                    }
+                }
             }
 
             GattConnectionEvent::PairingFailed(err) => {

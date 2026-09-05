@@ -2,6 +2,7 @@
 #![no_main]
 
 mod ble;
+mod bond_store;
 mod display;
 mod mini_joyc;
 mod mouse;
@@ -131,5 +132,13 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     let joyc = MiniJoyC::new(i2c);
 
-    ble::run(controller, &mut trng, button_a, button_b, joyc, &mut lcd).await;
+    // メモリ
+    let mut flash = embassy_embedded_hal::adapter::BlockingAsync::new(
+        esp_storage::FlashStorage::new(peripherals.FLASH),
+    );
+
+    ble::run(
+        controller, &mut trng, button_a, button_b, joyc, &mut lcd, &mut flash,
+    )
+    .await;
 }
