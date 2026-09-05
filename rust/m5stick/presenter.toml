@@ -3,7 +3,7 @@
 
 [general]
 default_profile = "linux"
-profile_order = ["linux", "mac", "landscape", "projector"]
+profile_order = ["linux", "mac", "landscape"]
 
 [display]
 timeout_seconds = 15
@@ -13,8 +13,8 @@ show_connection = true
 show_profile = true
 
 [scroll]
-dead_zone = 12
-speed = 8
+dead_zone = 8
+speed = 24
 horizontal = false
 invert_vertical = false
 invert_horizontal = false
@@ -64,7 +64,7 @@ invert_x = false
 invert_y = true
 
 [profiles.mac]
-label = "Mac"
+label = "Mac Fast"
 orientation = "normal"
 
 [profiles.mac.mouse]
@@ -96,31 +96,8 @@ invert_x = false
 invert_y = true
 
 [profiles.landscape.scroll]
-dead_zone = 14
-speed = 8
-horizontal = false
-invert_vertical = false
-invert_horizontal = false
-
-[profiles.projector]
-label = "Projector"
-orientation = "normal"
-
-[profiles.projector.mouse]
-poll_hz = 125
 dead_zone = 8
-base_speed_px_per_sec = 240.0
-max_speed_px_per_sec = 900.0
-gain_rise_per_sec = 5.0
-gain_fall_per_sec = 6.0
-curve_weight = 0.60
-smoothing = 0.60
-invert_x = false
-invert_y = true
-
-[profiles.projector.scroll]
-dead_zone = 14
-speed = 6
+speed = 24
 horizontal = false
 invert_vertical = false
 invert_horizontal = false

@@ -32,10 +32,58 @@ const BONDS_MAX: usize = 4;
 const DEVICE_NAME: &str = "M5Stick Presenter";
 
 const KEY_PRESS_DURATION_MS: u64 = 20;
+const JOYC_STATUS_FAIL_THRESHOLD: u8 = 10;
+const JOYC_STATUS_RECOVER_THRESHOLD: u8 = 2;
 
 static MOUSE_NOTIFY_ENABLED: AtomicBool = AtomicBool::new(false);
 
 static KEYBOARD_NOTIFY_ENABLED: AtomicBool = AtomicBool::new(false);
+
+struct JoycHealth {
+    ok: bool,
+    consecutive_ok: u8,
+    consecutive_err: u8,
+}
+
+impl JoycHealth {
+    fn new(initial_ok: bool) -> Self {
+        Self {
+            ok: initial_ok,
+            consecutive_ok: if initial_ok {
+                JOYC_STATUS_RECOVER_THRESHOLD
+            } else {
+                0
+            },
+            consecutive_err: if initial_ok {
+                0
+            } else {
+                JOYC_STATUS_FAIL_THRESHOLD
+            },
+        }
+    }
+
+    fn update(&mut self, read_ok: bool) -> Option<bool> {
+        if read_ok {
+            self.consecutive_ok = self.consecutive_ok.saturating_add(1);
+            self.consecutive_err = 0;
+
+            if !self.ok && self.consecutive_ok >= JOYC_STATUS_RECOVER_THRESHOLD {
+                self.ok = true;
+                return Some(true);
+            }
+        } else {
+            self.consecutive_err = self.consecutive_err.saturating_add(1);
+            self.consecutive_ok = 0;
+
+            if self.ok && self.consecutive_err >= JOYC_STATUS_FAIL_THRESHOLD {
+                self.ok = false;
+                return Some(false);
+            }
+        }
+
+        None
+    }
+}
 
 #[rustfmt::skip]
 static REPORT_MAP: [u8; 101] = [
@@ -239,7 +287,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
     println!("GATT server initialized");
 
     let mut profile_manager = ProfileManager::new();
-    let mut joyc_ok = false;
+    let mut joyc_health = JoycHealth::new(joyc.read().is_ok());
 
     let runner_task = async {
         loop {
@@ -253,14 +301,14 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
         loop {
             println!("advertising...");
             backlight.set_high();
-            joyc_ok = joyc.read().is_ok();
+            joyc_health.update(joyc.read().is_ok());
             display::render(
                 display,
                 Status::Waiting,
                 profile_manager.current().label,
                 battery::percent(),
                 None,
-                joyc_ok,
+                joyc_health.ok,
             )
             .unwrap();
 
@@ -289,7 +337,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
                 profile_manager.current().label,
                 battery::percent(),
                 Some(&peer_address),
-                joyc_ok,
+                joyc_health.ok,
             )
             .unwrap();
 
@@ -309,7 +357,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
                 &mut button_a,
                 &mut button_b,
                 &mut joyc,
-                &mut joyc_ok,
+                &mut joyc_health,
                 &mut backlight,
                 &mut profile_manager,
                 display,
@@ -326,7 +374,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
                 profile_manager.current().label,
                 battery::percent(),
                 None,
-                joyc_ok,
+                joyc_health.ok,
             )
             .unwrap();
         }
@@ -502,7 +550,7 @@ async fn input_task<P, I2C, D>(
     button_a: &mut Input<'_>,
     button_b: &mut Input<'_>,
     joyc: &mut MiniJoyC<I2C>,
-    joyc_ok: &mut bool,
+    joyc_health: &mut JoycHealth,
     backlight: &mut Output<'_>,
     profiles: &mut ProfileManager,
     display: &mut D,
@@ -535,8 +583,7 @@ async fn input_task<P, I2C, D>(
 
         match joyc.read() {
             Ok(joy) => {
-                if !*joyc_ok {
-                    *joyc_ok = true;
+                if let Some(joyc_ok) = joyc_health.update(true) {
                     backlight.set_high();
                     display_awake = true;
                     display::render(
@@ -545,7 +592,7 @@ async fn input_task<P, I2C, D>(
                         profiles.current().label,
                         battery::percent(),
                         None,
-                        *joyc_ok,
+                        joyc_ok,
                     )
                     .unwrap();
                 }
@@ -591,7 +638,7 @@ async fn input_task<P, I2C, D>(
                                 profile.label,
                                 battery::percent(),
                                 None,
-                                *joyc_ok,
+                                joyc_health.ok,
                             )
                             .unwrap();
                         }
@@ -637,7 +684,7 @@ async fn input_task<P, I2C, D>(
                             profiles.current().label,
                             battery::percent(),
                             None,
-                            *joyc_ok,
+                            joyc_health.ok,
                         )
                         .unwrap();
                     }
@@ -654,8 +701,7 @@ async fn input_task<P, I2C, D>(
             }
 
             Err(err) => {
-                if *joyc_ok {
-                    *joyc_ok = false;
+                if let Some(joyc_ok) = joyc_health.update(false) {
                     backlight.set_high();
                     display_awake = true;
                     display::render(
@@ -664,7 +710,7 @@ async fn input_task<P, I2C, D>(
                         profiles.current().label,
                         battery::percent(),
                         None,
-                        *joyc_ok,
+                        joyc_ok,
                     )
                     .unwrap();
                 }

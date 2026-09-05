@@ -12,8 +12,8 @@ show_connection = true
 show_profile = true
 
 [scroll]
-dead_zone = 12
-speed = 8
+dead_zone = 8
+speed = 24
 horizontal = false
 invert_vertical = false
 invert_horizontal = false

@@ -436,14 +436,16 @@ bit 2 = Middle
 
 既存ホストとの互換性確認では，Report IDを使っている前提で，Mouse Report IDとKeyboard Report IDの対応を崩さない．
 
+注意: Mouse Report Descriptorを変更した後，既にペアリング済みのホストでは古いHID descriptorがキャッシュされ，`Wheel` が効かない場合がある．その場合はホスト側でM5Stick Presenterのペアリングを削除し，再ペアリングして新しいdescriptorを読み直す．
+
 ## 13. スクロール設定
 
 スクロール感度もTOMLから調整可能とする．
 
 ```toml
 [scroll]
-dead_zone = 12
-speed = 8
+dead_zone = 8
+speed = 24
 horizontal = false
 invert_vertical = false
 invert_horizontal = false
@@ -540,8 +542,8 @@ show_connection = true
 show_profile = true
 
 [scroll]
-dead_zone = 12
-speed = 8
+dead_zone = 8
+speed = 24
 horizontal = false
 invert_vertical = false
 invert_horizontal = false
@@ -591,7 +593,7 @@ invert_x = false
 invert_y = false
 
 [profiles.mac]
-label = "Mac"
+label = "Mac Fast"
 orientation = "normal"
 
 [profiles.mac.mouse]
@@ -623,8 +625,8 @@ invert_x = false
 invert_y = false
 
 [profiles.landscape.scroll]
-dead_zone = 14
-speed = 8
+dead_zone = 8
+speed = 24
 horizontal = false
 invert_vertical = false
 invert_horizontal = false
