@@ -31,7 +31,7 @@ checksum = "c0cb6f3d4773a2107b94cbeccaa5b5f0b35a88389b5d522d13d659f64317b22d"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -141,7 +141,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "strsim",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -163,7 +163,7 @@ checksum = "2ac7135c3ef02b2f7833bbeb1be5ba7f966dcde8a87c6b87f65a778d71a02785"
 dependencies = [
  "darling_core 0.24.1",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -451,7 +451,7 @@ dependencies = [
  "embedded-storage",
  "esp-config",
  "esp-hal-procmacros",
- "esp-metadata-generated",
+ "esp-metadata-generated 0.4.0",
  "esp-rom-sys",
  "jiff",
  "strum",
@@ -464,7 +464,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d9b92fd9cfb0b4f8f1b6219b9763269a335571e307b014903b8201619374b80"
 dependencies = [
  "document-features",
- "esp-metadata-generated",
+ "esp-metadata-generated 0.4.0",
  "serde",
  "serde_yaml",
  "somni-expr",
@@ -497,11 +497,11 @@ dependencies = [
  "enumset",
  "esp-config",
  "esp-hal-procmacros",
- "esp-metadata-generated",
+ "esp-metadata-generated 0.4.0",
  "esp-riscv-rt",
  "esp-rom-sys",
  "esp-sync",
- "esp32",
+ "esp32 0.40.2",
  "esp32c2",
  "esp32c3",
  "esp32c6",
@@ -546,13 +546,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42c2ee95b945a4780796e4359e72c033aed3b45073880e8029458f538532db8a"
 
 [[package]]
+name = "esp-metadata-generated"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44d5a63d730b8c56e6b32773e35fcc4988d7d2e5c64d521652317d3ebddf2b52"
+
+[[package]]
 name = "esp-println"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42dee1e9ac7c3539bf6464db1707b0edd7557168f98278cf3c84fe70e63c6ce6"
 dependencies = [
  "document-features",
- "esp-metadata-generated",
+ "esp-metadata-generated 0.4.0",
  "esp-sync",
  "log",
  "portable-atomic",
@@ -571,14 +577,13 @@ dependencies = [
 
 [[package]]
 name = "esp-rom-sys"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eae852ccb08971155023d1371c96d5490cbc26860f06aee2d629ef73f1a890c3"
+checksum = "e933ff78374b763b65998b64ad671b4890ed4ba13a80deff9f53afe95ede289d"
 dependencies = [
- "cfg-if",
  "document-features",
- "esp-metadata-generated",
- "esp32",
+ "esp-metadata-generated 0.5.1",
+ "esp32 0.41.0",
 ]
 
 [[package]]
@@ -592,7 +597,7 @@ dependencies = [
  "embassy-sync 0.6.2",
  "embassy-sync 0.7.2",
  "embassy-sync 0.8.0",
- "esp-metadata-generated",
+ "esp-metadata-generated 0.4.0",
  "riscv",
  "xtensa-lx",
 ]
@@ -602,6 +607,15 @@ name = "esp32"
 version = "0.40.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5726e07689249d1a2cb7c492077bc424837fb68a64f7eb5d46569325352e9428"
+dependencies = [
+ "vcell",
+]
+
+[[package]]
+name = "esp32"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2f9714c79477940e5c7848b3832af89cd3bcd79abf4067e6938ae90de187a45"
 dependencies = [
  "vcell",
 ]
@@ -778,9 +792,9 @@ checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "indexmap"
-version = "2.14.1"
+version = "2.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07aa2048142242915a31d35844fb311e0e53fcca590c3a0a40dcf1b841fa09eb"
+checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown",
@@ -805,7 +819,7 @@ dependencies = [
  "indoc",
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -1099,7 +1113,7 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -1198,9 +1212,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.4"
+version = "3.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f"
+checksum = "12df2e0110f65b775f769bb17ef989067a1d931b2eb822bd4346631eeada89f9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1233,7 +1247,7 @@ checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.4",
+ "syn 3.0.5",
 ]
 
 [[package]]
