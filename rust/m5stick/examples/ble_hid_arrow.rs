@@ -1,48 +1,29 @@
 #![no_std]
 #![no_main]
 
-#[path = "../src/mini_joyc.rs"]
-mod mini_joyc;
-
-#[path = "../src/mouse.rs"]
-mod mouse;
-
 #[path = "../src/presenter.rs"]
 mod presenter;
 
-use mini_joyc::MiniJoyC;
-use mouse::from_joystick;
 use presenter::PresenterAction;
 
-use core::{
-    fmt::Debug,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use core::sync::atomic::{AtomicBool, Ordering};
 
-use embedded_hal::i2c::I2c as I2cTrait;
+static KEYBOARD_NOTIFY_ENABLED: AtomicBool = AtomicBool::new(false);
 
 use embassy_executor::Spawner;
-use embassy_futures::{join::join, select::select3};
+use embassy_futures::{join::join, select::select};
 use embassy_time::{Duration, Timer};
-
 use esp_hal::{
     clock::CpuClock,
-    gpio::{Input, InputConfig, Level, Output, OutputConfig},
-    i2c::master::{Config as I2cConfig, I2c},
+    gpio::{Input, InputConfig},
     interrupt::software::SoftwareInterruptControl,
     rng::{Trng, TrngSource},
-    time::Rate,
     timer::timg::TimerGroup,
 };
-
 use esp_println::println;
 use esp_radio::ble::controller::BleConnector;
 
 use trouble_host::prelude::*;
-
-// 状態
-static MOUSE_NOTIFY_ENABLED: AtomicBool = AtomicBool::new(false);
-static KEYBOARD_NOTIFY_ENABLED: AtomicBool = AtomicBool::new(false);
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -205,14 +186,11 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) {
-    println!("starting M5Stick presenter");
+    println!("starting BLE HID mouse");
 
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
 
     esp_alloc::heap_allocator!(size: 72 * 1024);
-
-    // バッテリー駆動時の電源保持
-    let _power_hold = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
 
     let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
 
@@ -220,48 +198,33 @@ async fn main(_spawner: Spawner) {
 
     esp_rtos::start(timg0.timer0, sw_int.software_interrupt0);
 
-    // Pairing用乱数
+    println!("RTOS started");
+
+    // Pairing用の暗号学的乱数源
     let _trng_source = TrngSource::new(peripherals.RNG, peripherals.ADC1);
 
     let mut trng = Trng::try_new().unwrap();
 
-    // BLE
+    println!("TRNG initialized");
+
     let connector = BleConnector::new(peripherals.BT, Default::default()).unwrap();
 
     let controller: ExternalController<_, 20> = ExternalController::new(connector);
 
-    // Presenter buttons
+    // Button の初期化
     let button_a = Input::new(peripherals.GPIO37, InputConfig::default());
-
     let button_b = Input::new(peripherals.GPIO39, InputConfig::default());
 
-    // Mini JoyC
-    //
-    // 実機では200 kHzより100 kHzの方が安定したので
-    // 100 kHzで固定する
-    let i2c = I2c::new(
-        peripherals.I2C0,
-        I2cConfig::default().with_frequency(Rate::from_khz(100)),
-    )
-    .unwrap()
-    .with_sda(peripherals.GPIO0)
-    .with_scl(peripherals.GPIO26);
-
-    let joyc = MiniJoyC::new(i2c);
-
-    run_ble(controller, &mut trng, button_a, button_b, joyc).await;
+    run_ble(controller, &mut trng, button_a, button_b).await;
 }
 
-async fn run_ble<'d, C, I2C>(
+async fn run_ble<'d, C>(
     controller: C,
     trng: &mut Trng,
     mut button_a: Input<'d>,
     mut button_b: Input<'d>,
-    mut joyc: MiniJoyC<I2C>,
 ) where
     C: Controller,
-    I2C: I2cTrait,
-    I2C::Error: Debug,
 {
     let address = Address::random([0x42, 0x11, 0x22, 0x33, 0x44, 0xc0]);
 
@@ -318,9 +281,7 @@ async fn run_ble<'d, C, I2C>(
 
             let presenter = presenter_task(&server, &conn, &mut button_a, &mut button_b);
 
-            let mouse = mouse_task(&server, &conn, &mut joyc);
-
-            select3(gatt, presenter, mouse).await;
+            select(gatt, presenter).await;
 
             println!("connection ended");
         }
@@ -367,20 +328,13 @@ async fn advertise<'values, 'server, C: Controller>(
 }
 
 async fn gatt_events_task<P: PacketPool>(server: &Server<'_>, conn: &GattConnection<'_, '_, P>) {
-    let mouse = server.hid_service.mouse_report;
-
     let keyboard = server.hid_service.keyboard_report;
-
-    let mouse_cccd = mouse.cccd_handle;
-
     let keyboard_cccd = keyboard.cccd_handle;
 
     loop {
         match conn.next().await {
             GattConnectionEvent::Disconnected { reason } => {
                 println!("disconnected: {:?}", reason);
-
-                MOUSE_NOTIFY_ENABLED.store(false, Ordering::Release);
 
                 KEYBOARD_NOTIFY_ENABLED.store(false, Ordering::Release);
 
@@ -400,16 +354,8 @@ async fn gatt_events_task<P: PacketPool>(server: &Server<'_>, conn: &GattConnect
                     GattEvent::Write(event) => {
                         let data = event.data();
 
-                        if Some(event.handle()) == mouse_cccd && data.len() >= 2 {
-                            let enabled = data[0] & 1 != 0;
-
-                            MOUSE_NOTIFY_ENABLED.store(enabled, Ordering::Release);
-
-                            println!("mouse notify={}", enabled);
-                        }
-
                         if Some(event.handle()) == keyboard_cccd && data.len() >= 2 {
-                            let enabled = data[0] & 1 != 0;
+                            let enabled = data[0] & 0x01 != 0;
 
                             KEYBOARD_NOTIFY_ENABLED.store(enabled, Ordering::Release);
 
@@ -492,13 +438,13 @@ async fn presenter_task<P: PacketPool>(
         let b_pressed = button_b.is_low();
 
         if a_pressed && !a_was_pressed {
-            println!("->");
+            println!("next slide");
 
             send_key(&keyboard, conn, PresenterAction::NextSlide).await;
         }
 
         if b_pressed && !b_was_pressed {
-            println!("<-");
+            println!("previous slide");
 
             send_key(&keyboard, conn, PresenterAction::PreviousSlide).await;
         }
@@ -507,68 +453,5 @@ async fn presenter_task<P: PacketPool>(
         b_was_pressed = b_pressed;
 
         Timer::after(Duration::from_millis(15)).await;
-    }
-}
-
-async fn mouse_task<P, I2C>(
-    server: &Server<'_>,
-    conn: &GattConnection<'_, '_, P>,
-    joyc: &mut MiniJoyC<I2C>,
-) where
-    P: PacketPool,
-    I2C: I2cTrait,
-    I2C::Error: Debug,
-{
-    println!("waiting for mouse notification subscription");
-
-    while !MOUSE_NOTIFY_ENABLED.load(Ordering::Acquire) {
-        Timer::after(Duration::from_millis(50)).await;
-    }
-
-    println!("mouse ready");
-
-    let report_characteristic = server.hid_service.mouse_report;
-
-    let mut previous_pressed = false;
-
-    loop {
-        match joyc.read() {
-            Ok(joy) => {
-                let mouse = from_joystick(joy);
-
-                // スティックを倒している間は毎回送る．
-                // ボタンについては状態が変わったときだけでも
-                // reportを送れるようにする．
-                let should_send =
-                    mouse.dx != 0 || mouse.dy != 0 || mouse.left_pressed != previous_pressed;
-
-                if should_send {
-                    let report = [
-                        if mouse.left_pressed { 0x01 } else { 0x00 },
-                        mouse.dx as u8,
-                        mouse.dy as u8,
-                    ];
-
-                    match report_characteristic.notify(conn, &report).await {
-                        Ok(()) => {
-                            previous_pressed = mouse.left_pressed;
-                        }
-
-                        Err(err) => {
-                            println!("mouse notify error: {:?}", err);
-                        }
-                    }
-                }
-            }
-
-            Err(err) => {
-                // 1フレーム落とすだけにする．
-                // Presenter自体は停止しない．
-                println!("Mini JoyC error: {:?}", err);
-            }
-        }
-
-        // 100 Hz
-        Timer::after(Duration::from_millis(10)).await;
     }
 }

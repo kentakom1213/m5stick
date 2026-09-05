@@ -10,8 +10,8 @@ pub struct MouseState {
 pub fn from_joystick(state: JoyState) -> MouseState {
     MouseState {
         dx: axis_to_delta(state.x),
-        // マウス座標とJoyCの向きが逆ならここで反転
-        dy: axis_to_delta(state.y),
+        // マウス座標とJoyCの向きが逆になるためここで反転
+        dy: axis_to_delta(-state.y),
         left_pressed: state.pressed,
     }
 }
