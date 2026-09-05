@@ -19,6 +19,7 @@ pub enum Status {
 pub fn render<D>(
     display: &mut D,
     status: Status,
+    profile_label: &str,
     battery: u8,
     peer_address: Option<&str>,
 ) -> Result<(), D::Error>
@@ -48,11 +49,13 @@ where
 
     Text::new(address_text, Point::new(10, 60), small_style).draw(display)?;
 
+    Text::new(profile_label, Point::new(10, 85), large_white_style).draw(display)?;
+
     let mut battery_text = heapless::String::<16>::new();
 
     write!(battery_text, "[{}] {}%", battery_icon(battery), battery).unwrap();
 
-    Text::new(&battery_text, Point::new(10, 100), battery_style).draw(display)?;
+    Text::new(&battery_text, Point::new(10, 120), battery_style).draw(display)?;
 
     Text::new("BLE", Point::new(10, 155), large_white_style).draw(display)?;
     Text::new("OK", Point::new(70, 155), ok_style).draw(display)?;

@@ -16,8 +16,11 @@ use embedded_storage_async::nor_flash::NorFlash;
 use crate::display::{self, Status};
 use crate::{battery, bond_store};
 use crate::{
-    config::MOUSE_POLL_INTERVAL_US, mini_joyc::MiniJoyC, mouse::MouseMapper,
-    presenter::PresenterAction,
+    config::{Action, MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT},
+    input::{InputEngine, InputSample, InputState},
+    mini_joyc::MiniJoyC,
+    mouse::MouseMapper,
+    profile::ProfileManager,
 };
 
 const CONNECTIONS_MAX: usize = 1;
@@ -26,7 +29,6 @@ const BONDS_MAX: usize = 4;
 
 const DEVICE_NAME: &str = "M5Stick Presenter";
 
-const BUTTON_POLL_INTERVAL_MS: u64 = 15;
 const KEY_PRESS_DURATION_MS: u64 = 20;
 
 static MOUSE_NOTIFY_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -34,7 +36,7 @@ static MOUSE_NOTIFY_ENABLED: AtomicBool = AtomicBool::new(false);
 static KEYBOARD_NOTIFY_ENABLED: AtomicBool = AtomicBool::new(false);
 
 #[rustfmt::skip]
-static REPORT_MAP: [u8; 99] = [
+static REPORT_MAP: [u8; 101] = [
     // ---------------------------------------------------------
     // Report ID 1: Mouse
     // ---------------------------------------------------------
@@ -64,10 +66,11 @@ static REPORT_MAP: [u8; 99] = [
     0x05, 0x01,
     0x09, 0x30,
     0x09, 0x31,
+    0x09, 0x38,
     0x15, 0x81,
     0x25, 0x7f,
     0x75, 0x08,
-    0x95, 0x02,
+    0x95, 0x03,
     0x81, 0x06,
 
     0xC0,
@@ -133,7 +136,7 @@ struct HidService {
         value = REPORT_MAP,
         permissions(encrypted)
     )]
-    report_map: [u8; 99],
+    report_map: [u8; 101],
 
     #[characteristic(uuid = "2a4c", write_without_response, permissions(encrypted))]
     control_point: u8,
@@ -154,7 +157,7 @@ struct HidService {
         value = [1u8, 1u8]
     )]
     #[characteristic(uuid = "2a4d", read, notify, permissions(encrypted))]
-    mouse_report: [u8; 3],
+    mouse_report: [u8; 4],
 
     // Report ID 2: Keyboard
     #[descriptor(
@@ -232,6 +235,8 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
 
     println!("GATT server initialized");
 
+    let mut profile_manager = ProfileManager::new();
+
     let runner_task = async {
         loop {
             if let Err(err) = runner.run().await {
@@ -243,7 +248,14 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
     let peripheral_task = async {
         loop {
             println!("advertising...");
-            display::render(display, Status::Waiting, battery::percent(), None).unwrap();
+            display::render(
+                display,
+                Status::Waiting,
+                profile_manager.current().label,
+                battery::percent(),
+                None,
+            )
+            .unwrap();
 
             let conn = match advertise(&mut peripheral, &server).await {
                 Ok(conn) => conn,
@@ -267,6 +279,7 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
             display::render(
                 display,
                 Status::Connected,
+                profile_manager.current().label,
                 battery::percent(),
                 Some(&peer_address),
             )
@@ -282,16 +295,29 @@ pub async fn run<'d, C, I2C, D, S, RNG>(
 
             let gatt = gatt_events_task(storage, &server, &conn);
 
-            let presenter = presenter_task(&server, &conn, &mut button_a, &mut button_b);
-
-            let mouse = mouse_task(&server, &conn, &mut joyc);
+            let input = input_task(
+                &server,
+                &conn,
+                &mut button_a,
+                &mut button_b,
+                &mut joyc,
+                &mut profile_manager,
+                display,
+            );
 
             let battery_service = battery_service_task(&server, &conn);
 
-            select4(gatt, presenter, mouse, battery_service).await;
+            select4(gatt, input, battery_service, core::future::pending::<()>()).await;
 
             println!("connection ended");
-            display::render(display, Status::Waiting, battery::percent(), None).unwrap();
+            display::render(
+                display,
+                Status::Waiting,
+                profile_manager.current().label,
+                battery::percent(),
+                None,
+            )
+            .unwrap();
         }
     };
 
@@ -459,55 +485,127 @@ async fn gatt_events_task<P: PacketPool, S: NorFlash>(
     }
 }
 
-async fn presenter_task<P: PacketPool>(
+async fn input_task<P, I2C, D>(
     server: &Server<'_>,
     conn: &GattConnection<'_, '_, P>,
     button_a: &mut Input<'_>,
     button_b: &mut Input<'_>,
-) {
-    while !KEYBOARD_NOTIFY_ENABLED.load(Ordering::Acquire) {
+    joyc: &mut MiniJoyC<I2C>,
+    profiles: &mut ProfileManager,
+    display: &mut D,
+) where
+    P: PacketPool,
+    I2C: I2cTrait,
+    I2C::Error: Debug,
+    D: DrawTarget<Color = Rgb565>,
+    D::Error: Debug,
+{
+    while !MOUSE_NOTIFY_ENABLED.load(Ordering::Acquire)
+        && !KEYBOARD_NOTIFY_ENABLED.load(Ordering::Acquire)
+    {
         Timer::after(Duration::from_millis(50)).await;
     }
 
-    println!("keyboard ready");
+    println!("input ready");
 
-    let keyboard = server.hid_service.keyboard_report;
-
-    let mut a_was_pressed = button_a.is_low();
-
-    let mut b_was_pressed = button_b.is_low();
+    let mouse_report = server.hid_service.mouse_report;
+    let keyboard_report = server.hid_service.keyboard_report;
+    let mut mapper = MouseMapper::new();
+    let mut input = InputEngine::new();
+    let mut previous_mouse_buttons = 0u8;
+    let mut now_ms = 0u64;
 
     loop {
-        let a_pressed = button_a.is_low();
+        let profile = profiles.current();
 
-        let b_pressed = button_b.is_low();
+        match joyc.read() {
+            Ok(joy) => {
+                let sample = InputSample {
+                    buttons: InputState {
+                        button_a: button_a.is_low(),
+                        button_b: button_b.is_low(),
+                        joy_click: joy.pressed,
+                    },
+                    joy,
+                };
 
-        if a_pressed && !a_was_pressed {
-            println!("next slide");
+                let outcome = input.update(sample, &profile.input, &profile.scroll, now_ms);
 
-            send_key(&keyboard, conn, PresenterAction::ButtonA).await;
+                if let Some(event) = outcome.event {
+                    match event.action {
+                        Action::KeyboardKey(key) => {
+                            send_key(&keyboard_report, conn, key).await;
+                        }
+
+                        Action::MouseButton(button) => {
+                            send_mouse_click(&mouse_report, conn, button).await;
+                            previous_mouse_buttons = 0;
+                        }
+
+                        Action::NextProfile => {
+                            let profile = profiles.next();
+
+                            println!("profile={}", profile.label);
+
+                            display::render(
+                                display,
+                                Status::Connected,
+                                profile.label,
+                                battery::percent(),
+                                None,
+                            )
+                            .unwrap();
+                        }
+
+                        Action::ScrollMode | Action::None => {}
+                    }
+                }
+
+                if outcome.scroll_mode {
+                    let wheel = mapper.update_scroll(joy, &profile.scroll, profile.mouse.poll_hz);
+
+                    if wheel != 0 {
+                        send_mouse_report(&mouse_report, conn, previous_mouse_buttons, 0, 0, wheel)
+                            .await;
+                    }
+                } else {
+                    let pointer = mapper.update_pointer(joy, &profile.mouse, profile.orientation);
+
+                    if pointer.dx != 0 || pointer.dy != 0 || previous_mouse_buttons != 0 {
+                        send_mouse_report(
+                            &mouse_report,
+                            conn,
+                            previous_mouse_buttons,
+                            pointer.dx,
+                            pointer.dy,
+                            0,
+                        )
+                        .await;
+                    }
+                }
+
+                now_ms = now_ms.saturating_add(profile.mouse.poll_interval_us / 1_000);
+                Timer::after(Duration::from_micros(profile.mouse.poll_interval_us)).await;
+            }
+
+            Err(err) => {
+                println!("Mini JoyC error: {:?}", err);
+                Timer::after(Duration::from_millis(50)).await;
+            }
         }
-
-        if b_pressed && !b_was_pressed {
-            println!("previous slide");
-
-            send_key(&keyboard, conn, PresenterAction::ButtonB).await;
-        }
-
-        a_was_pressed = a_pressed;
-
-        b_was_pressed = b_pressed;
-
-        Timer::after(Duration::from_millis(BUTTON_POLL_INTERVAL_MS)).await;
     }
 }
 
 async fn send_key<P: PacketPool>(
     keyboard: &Characteristic<[u8; 8]>,
     conn: &GattConnection<'_, '_, P>,
-    action: PresenterAction,
+    key_code: u8,
 ) {
-    let down = [0x00, 0x00, action.key_code(), 0, 0, 0, 0, 0];
+    if !KEYBOARD_NOTIFY_ENABLED.load(Ordering::Acquire) {
+        return;
+    }
+
+    let down = [0x00, 0x00, key_code, 0, 0, 0, 0, 0];
 
     if let Err(err) = keyboard.notify(conn, &down).await {
         println!("keyboard down error: {:?}", err);
@@ -524,59 +622,37 @@ async fn send_key<P: PacketPool>(
     }
 }
 
-async fn mouse_task<P, I2C>(
-    server: &Server<'_>,
+async fn send_mouse_click<P: PacketPool>(
+    mouse: &Characteristic<[u8; 4]>,
     conn: &GattConnection<'_, '_, P>,
-    joyc: &mut MiniJoyC<I2C>,
-) where
-    P: PacketPool,
-    I2C: I2cTrait,
-    I2C::Error: Debug,
-{
-    while !MOUSE_NOTIFY_ENABLED.load(Ordering::Acquire) {
-        Timer::after(Duration::from_millis(50)).await;
+    button: u8,
+) {
+    let button = button & (MOUSE_BUTTON_LEFT | MOUSE_BUTTON_RIGHT | MOUSE_BUTTON_MIDDLE);
+
+    if button == 0 {
+        return;
     }
 
-    println!("mouse ready");
+    send_mouse_report(mouse, conn, button, 0, 0, 0).await;
+    Timer::after(Duration::from_millis(KEY_PRESS_DURATION_MS)).await;
+    send_mouse_report(mouse, conn, 0, 0, 0, 0).await;
+}
 
-    let report_characteristic = server.hid_service.mouse_report;
+async fn send_mouse_report<P: PacketPool>(
+    mouse: &Characteristic<[u8; 4]>,
+    conn: &GattConnection<'_, '_, P>,
+    buttons: u8,
+    dx: i8,
+    dy: i8,
+    wheel: i8,
+) {
+    if !MOUSE_NOTIFY_ENABLED.load(Ordering::Acquire) {
+        return;
+    }
 
-    let mut mapper = MouseMapper::new();
+    let report = [buttons, dx as u8, dy as u8, wheel as u8];
 
-    let mut previous_pressed = false;
-
-    loop {
-        match joyc.read() {
-            Ok(joy) => {
-                let mouse = mapper.update(joy);
-
-                let should_send =
-                    mouse.dx != 0 || mouse.dy != 0 || mouse.left_pressed != previous_pressed;
-
-                if should_send {
-                    let report = [
-                        if mouse.left_pressed { 0x01 } else { 0x00 },
-                        mouse.dx as u8,
-                        mouse.dy as u8,
-                    ];
-
-                    match report_characteristic.notify(conn, &report).await {
-                        Ok(()) => {
-                            previous_pressed = mouse.left_pressed;
-                        }
-
-                        Err(err) => {
-                            println!("mouse notify error: {:?}", err);
-                        }
-                    }
-                }
-            }
-
-            Err(err) => {
-                println!("Mini JoyC error: {:?}", err);
-            }
-        }
-
-        Timer::after(Duration::from_micros(MOUSE_POLL_INTERVAL_US)).await;
+    if let Err(err) = mouse.notify(conn, &report).await {
+        println!("mouse notify error: {:?}", err);
     }
 }

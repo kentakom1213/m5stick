@@ -6,9 +6,9 @@ mod ble;
 mod bond_store;
 mod config;
 mod display;
+mod input;
 mod mini_joyc;
 mod mouse;
-mod presenter;
 mod profile;
 
 use embassy_futures::join::join;
@@ -144,7 +144,14 @@ async fn main(_spawner: embassy_executor::Spawner) {
         );
     }
 
-    display::render(&mut lcd, display::Status::Waiting, battery::percent(), None).unwrap();
+    display::render(
+        &mut lcd,
+        display::Status::Waiting,
+        config::PROFILES[config::DEFAULT_PROFILE_INDEX].label,
+        battery::percent(),
+        None,
+    )
+    .unwrap();
 
     // BLE controller
     let connector = BleConnector::new(peripherals.BT, Default::default()).unwrap();
