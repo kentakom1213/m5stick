@@ -606,7 +606,13 @@ async fn input_task<P, I2C, D>(
                     joy,
                 };
 
-                let outcome = input.update(sample, &profile.input, &profile.scroll, now_ms);
+                let outcome = input.update(
+                    sample,
+                    &profile.input,
+                    &profile.scroll,
+                    profile.orientation,
+                    now_ms,
+                );
 
                 let mut activity = sample.buttons.button_mask() != 0;
 
@@ -648,7 +654,12 @@ async fn input_task<P, I2C, D>(
                 }
 
                 if outcome.scroll_mode {
-                    let wheel = mapper.update_scroll(joy, &profile.scroll, profile.mouse.poll_hz);
+                    let wheel = mapper.update_scroll(
+                        joy,
+                        &profile.scroll,
+                        profile.orientation,
+                        profile.mouse.poll_hz,
+                    );
 
                     if wheel != 0 {
                         activity = true;

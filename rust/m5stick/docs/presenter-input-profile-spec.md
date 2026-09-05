@@ -388,6 +388,8 @@ Scroll modeへ入る判定
 -> active scroll.dead_zone
 ```
 
+Scroll modeへ入る判定と縦scroll量の算出は，プロファイルの `orientation` を適用した後のY軸を使用する．これにより `landscape` などの横持ちでも，物理的な上下操作が画面上の縦scrollに対応する．
+
 ## 12. HID Mouse Report
 
 スクロール対応に伴い，Mouse Reportを現在の3 byteから少なくとも4 byteへ拡張する．

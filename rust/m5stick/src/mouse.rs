@@ -77,8 +77,15 @@ impl MouseMapper {
         }
     }
 
-    pub fn update_scroll(&mut self, state: JoyState, scroll: &ScrollConfig, poll_hz: i64) -> i8 {
-        let mut axis = i32::from(state.y);
+    pub fn update_scroll(
+        &mut self,
+        state: JoyState,
+        scroll: &ScrollConfig,
+        orientation: Orientation,
+        poll_hz: i64,
+    ) -> i8 {
+        let (_, rotated_y) = rotate(i32::from(state.x), i32::from(state.y), orientation);
+        let mut axis = rotated_y;
 
         if scroll.invert_vertical {
             axis = -axis;

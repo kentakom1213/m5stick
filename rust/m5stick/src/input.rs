@@ -1,6 +1,6 @@
 use crate::config::{
     Action, BUTTON_A_BIT, BUTTON_B_BIT, ButtonInputConfig, ComboConfig, InputConfig, JOY_CLICK_BIT,
-    ScrollConfig,
+    Orientation, ScrollConfig,
 };
 use crate::mini_joyc::JoyState;
 
@@ -137,6 +137,7 @@ impl InputEngine {
         sample: InputSample,
         config: &InputConfig,
         scroll: &ScrollConfig,
+        orientation: Orientation,
         now_ms: u64,
     ) -> InputOutcome {
         let previous = InputState {
@@ -165,7 +166,7 @@ impl InputEngine {
             event = self.hold_event(config, now_ms);
         }
 
-        self.update_scroll_mode(sample, config, scroll);
+        self.update_scroll_mode(sample, config, scroll, orientation);
 
         if event.is_none() {
             event = self.release_event(sample.buttons, previous, config, now_ms);
@@ -266,6 +267,7 @@ impl InputEngine {
         sample: InputSample,
         config: &InputConfig,
         scroll: &ScrollConfig,
+        orientation: Orientation,
     ) {
         if !sample.buttons.button_a {
             self.scroll_mode = false;
@@ -276,7 +278,13 @@ impl InputEngine {
             return;
         }
 
-        if i32::from(sample.joy.y).abs() > scroll.dead_zone {
+        let (_, rotated_y) = rotate_joy(
+            i32::from(sample.joy.x),
+            i32::from(sample.joy.y),
+            orientation,
+        );
+
+        if rotated_y.abs() > scroll.dead_zone {
             self.button_a.consumed = true;
             self.scroll_mode = true;
         }
@@ -337,6 +345,15 @@ impl InputEngine {
         if buttons & JOY_CLICK_BIT != 0 {
             self.joy_click.consumed = true;
         }
+    }
+}
+
+fn rotate_joy(x: i32, y: i32, orientation: Orientation) -> (i32, i32) {
+    match orientation {
+        Orientation::Normal => (x, y),
+        Orientation::Right => (-y, x),
+        Orientation::Inverted => (-x, -y),
+        Orientation::Left => (y, -x),
     }
 }
 
