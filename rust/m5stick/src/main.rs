@@ -2,19 +2,35 @@
 #![no_main]
 
 mod ble;
+mod display;
 mod mini_joyc;
 mod mouse;
 mod presenter;
 
+use embedded_hal_bus::spi::ExclusiveDevice;
+
 use esp_hal::{
     clock::CpuClock,
+    delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig},
     i2c::master::{Config as I2cConfig, I2c},
     interrupt::software::SoftwareInterruptControl,
     rng::{Trng, TrngSource},
+    spi::{
+        Mode,
+        master::{Config as SpiConfig, Spi},
+    },
     time::Rate,
     timer::timg::TimerGroup,
 };
+
+use mipidsi::{
+    Builder,
+    interface::SpiInterface,
+    models::ST7789,
+    options::{ColorInversion, ColorOrder},
+};
+
 use esp_println::println;
 use esp_radio::ble::controller::BleConnector;
 use trouble_host::prelude::ExternalController;
@@ -38,9 +54,47 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     esp_alloc::heap_allocator!(size: 72 * 1024);
 
-    // M5StickC Plus2 の電源保持．
-    // この値をLOWにすれば，バッテリー駆動時は電源OFFできる．
+    // M5StickC Plus2の電源保持．
+    // 電源ON/OFF自体はButton Cに任せる．
     let _power_hold = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
+
+    // LCDバックライト
+    let _backlight = Output::new(peripherals.GPIO27, Level::High, OutputConfig::default());
+
+    let dc = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());
+
+    let rst = Output::new(peripherals.GPIO12, Level::High, OutputConfig::default());
+
+    let cs = Output::new(peripherals.GPIO5, Level::High, OutputConfig::default());
+
+    let spi = Spi::new(
+        peripherals.SPI2,
+        SpiConfig::default()
+            .with_frequency(Rate::from_mhz(20))
+            .with_mode(Mode::_0),
+    )
+    .unwrap()
+    .with_sck(peripherals.GPIO13)
+    .with_mosi(peripherals.GPIO15);
+
+    let spi_device = ExclusiveDevice::new(spi, cs, Delay::new()).unwrap();
+
+    let mut lcd_buffer = [0u8; 512];
+
+    let interface = SpiInterface::new(spi_device, dc, &mut lcd_buffer);
+
+    let mut lcd_delay = Delay::new();
+
+    let mut lcd = Builder::new(ST7789, interface)
+        .reset_pin(rst)
+        .display_size(135, 240)
+        .display_offset(52, 40)
+        .invert_colors(ColorInversion::Inverted)
+        .color_order(ColorOrder::Rgb)
+        .init(&mut lcd_delay)
+        .unwrap();
+
+    display::render(&mut lcd, display::Status::Waiting).unwrap();
 
     // esp-rtos / Embassy
     let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -77,5 +131,5 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     let joyc = MiniJoyC::new(i2c);
 
-    ble::run(controller, &mut trng, button_a, button_b, joyc).await;
+    ble::run(controller, &mut trng, button_a, button_b, joyc, &mut lcd).await;
 }

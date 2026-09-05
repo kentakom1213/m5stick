@@ -10,6 +10,9 @@ use esp_hal::{gpio::Input, rng::Trng};
 use esp_println::println;
 use trouble_host::prelude::*;
 
+use embedded_graphics::{pixelcolor::Rgb565, prelude::DrawTarget};
+
+use crate::display::{self, Status};
 use crate::{mini_joyc::MiniJoyC, mouse::from_joystick, presenter::PresenterAction};
 
 const CONNECTIONS_MAX: usize = 1;
@@ -170,16 +173,19 @@ struct BatteryService {
     level: u8,
 }
 
-pub async fn run<'d, C, I2C>(
+pub async fn run<'d, C, I2C, D>(
     controller: C,
     trng: &mut Trng,
     mut button_a: Input<'d>,
     mut button_b: Input<'d>,
     mut joyc: MiniJoyC<I2C>,
+    display: &mut D,
 ) where
     C: Controller,
     I2C: I2cTrait,
     I2C::Error: Debug,
+    D: DrawTarget<Color = Rgb565>,
+    D::Error: Debug,
 {
     let address = Address::random([0x42, 0x11, 0x22, 0x33, 0x44, 0xc0]);
 
@@ -217,6 +223,7 @@ pub async fn run<'d, C, I2C>(
     let peripheral_task = async {
         loop {
             println!("advertising...");
+            display::render(display, Status::Waiting).unwrap();
 
             let conn = match advertise(&mut peripheral, &server).await {
                 Ok(conn) => conn,
@@ -229,6 +236,7 @@ pub async fn run<'d, C, I2C>(
             };
 
             println!("connection established");
+            display::render(display, Status::Connected).unwrap();
 
             conn.raw().set_bondable(true).unwrap();
 
@@ -241,6 +249,7 @@ pub async fn run<'d, C, I2C>(
             select3(gatt, presenter, mouse).await;
 
             println!("connection ended");
+            display::render(display, Status::Waiting).unwrap();
         }
     };
 
