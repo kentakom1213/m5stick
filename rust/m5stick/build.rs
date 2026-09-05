@@ -55,6 +55,34 @@ struct ComboConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+struct InputOverrideConfig {
+    combo_window_ms: Option<u64>,
+    tap_max_ms: Option<u64>,
+    default_hold_ms: Option<u64>,
+    button_a: Option<ButtonInputOverrideConfig>,
+    button_b: Option<ButtonInputOverrideConfig>,
+    joy_click: Option<ButtonInputOverrideConfig>,
+    combo: Option<Vec<ComboConfig>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ButtonInputOverrideConfig {
+    tap: Option<String>,
+    hold: Option<String>,
+    hold_ms: Option<u64>,
+    hold_joy: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ScrollOverrideConfig {
+    dead_zone: Option<i32>,
+    speed: Option<i32>,
+    horizontal: Option<bool>,
+    invert_vertical: Option<bool>,
+    invert_horizontal: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct ScrollConfig {
     dead_zone: i32,
     speed: i32,
@@ -68,8 +96,8 @@ struct ProfileConfig {
     label: String,
     orientation: String,
     mouse: MouseConfig,
-    input: Option<InputConfig>,
-    scroll: Option<ScrollConfig>,
+    input: Option<InputOverrideConfig>,
+    scroll: Option<ScrollOverrideConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,8 +163,11 @@ fn generate_presenter_config() {
             .profiles
             .get(name)
             .expect("profile_order entry missing");
-        let input = profile.input.as_ref().unwrap_or(&config.input);
-        let scroll = profile.scroll.as_ref().unwrap_or(&config.scroll);
+        let input = resolve_input(&config.input, profile.input.as_ref());
+        let scroll = resolve_scroll(&config.scroll, profile.scroll.as_ref());
+
+        validate_input(&input);
+        validate_scroll(&scroll, &format!("profiles.{name}.scroll"));
         let mouse = &profile.mouse;
         let combos_name = format!("PROFILE_{index}_COMBOS");
 
@@ -159,8 +190,8 @@ fn generate_presenter_config() {
             label = profile.label,
             orientation = render_orientation(&profile.orientation),
             mouse = render_mouse(mouse),
-            scroll = render_scroll(scroll),
-            input = render_input(input, &combos_name),
+            scroll = render_scroll(&scroll),
+            input = render_input(&input, &combos_name),
         ));
     }
 
@@ -293,6 +324,82 @@ pub const BATTERY_POLL_SECONDS: u64 = {battery_poll_seconds};
         "cargo:warning=generated presenter config: {}",
         output.display()
     );
+}
+
+fn resolve_input(base: &InputConfig, override_config: Option<&InputOverrideConfig>) -> InputConfig {
+    let Some(override_config) = override_config else {
+        return base.clone();
+    };
+
+    let mut resolved = base.clone();
+
+    if let Some(value) = override_config.combo_window_ms {
+        resolved.combo_window_ms = value;
+    }
+
+    if let Some(value) = override_config.tap_max_ms {
+        resolved.tap_max_ms = value;
+    }
+
+    if let Some(value) = override_config.default_hold_ms {
+        resolved.default_hold_ms = value;
+    }
+
+    apply_button_override(&mut resolved.button_a, override_config.button_a.as_ref());
+    apply_button_override(&mut resolved.button_b, override_config.button_b.as_ref());
+    apply_button_override(&mut resolved.joy_click, override_config.joy_click.as_ref());
+
+    if let Some(combo) = &override_config.combo {
+        resolved.combo = combo.clone();
+    }
+
+    resolved
+}
+
+fn apply_button_override(
+    base: &mut ButtonInputConfig,
+    override_config: Option<&ButtonInputOverrideConfig>,
+) {
+    let Some(override_config) = override_config else {
+        return;
+    };
+
+    if let Some(value) = &override_config.tap {
+        base.tap = Some(value.clone());
+    }
+
+    if let Some(value) = &override_config.hold {
+        base.hold = Some(value.clone());
+    }
+
+    if let Some(value) = override_config.hold_ms {
+        base.hold_ms = Some(value);
+    }
+
+    if let Some(value) = &override_config.hold_joy {
+        base.hold_joy = Some(value.clone());
+    }
+}
+
+fn resolve_scroll(
+    base: &ScrollConfig,
+    override_config: Option<&ScrollOverrideConfig>,
+) -> ScrollConfig {
+    let Some(override_config) = override_config else {
+        return base.clone();
+    };
+
+    ScrollConfig {
+        dead_zone: override_config.dead_zone.unwrap_or(base.dead_zone),
+        speed: override_config.speed.unwrap_or(base.speed),
+        horizontal: override_config.horizontal.unwrap_or(base.horizontal),
+        invert_vertical: override_config
+            .invert_vertical
+            .unwrap_or(base.invert_vertical),
+        invert_horizontal: override_config
+            .invert_horizontal
+            .unwrap_or(base.invert_horizontal),
+    }
 }
 
 fn render_mouse(mouse: &MouseConfig) -> String {
@@ -437,11 +544,11 @@ fn validate_profiles(config: &Config) {
         validate_mouse(&profile.mouse, &format!("profiles.{name}.mouse"));
 
         if let Some(input) = &profile.input {
-            validate_input(input);
+            validate_input_override(input);
         }
 
         if let Some(scroll) = &profile.scroll {
-            validate_scroll(scroll, &format!("profiles.{name}.scroll"));
+            validate_scroll_override(scroll, &format!("profiles.{name}.scroll"));
         }
     }
 }
@@ -534,6 +641,78 @@ fn validate_button_input(input: &ButtonInputConfig, name: &str) {
 
     if let Some(action) = &input.hold_joy {
         validate_action(action);
+    }
+}
+
+fn validate_input_override(input: &InputOverrideConfig) {
+    if let Some(value) = input.combo_window_ms {
+        assert!(value > 0, "input.combo_window_ms must be greater than 0");
+    }
+
+    if let Some(value) = input.tap_max_ms {
+        assert!(value > 0, "input.tap_max_ms must be greater than 0");
+    }
+
+    if let Some(value) = input.default_hold_ms {
+        assert!(value > 0, "input.default_hold_ms must be greater than 0");
+    }
+
+    validate_button_input_override(input.button_a.as_ref(), "input.button_a");
+    validate_button_input_override(input.button_b.as_ref(), "input.button_b");
+    validate_button_input_override(input.joy_click.as_ref(), "input.joy_click");
+
+    if let Some(combos) = &input.combo {
+        for combo in combos {
+            assert!(
+                combo.buttons.len() >= 2,
+                "combo must contain at least 2 buttons"
+            );
+
+            for button in &combo.buttons {
+                validate_button_id(button);
+            }
+
+            validate_action(&combo.action);
+
+            if let Some(hold_ms) = combo.hold_ms {
+                assert!(hold_ms > 0, "combo.hold_ms must be greater than 0");
+            }
+        }
+    }
+}
+
+fn validate_button_input_override(input: Option<&ButtonInputOverrideConfig>, name: &str) {
+    let Some(input) = input else {
+        return;
+    };
+
+    if let Some(action) = &input.tap {
+        validate_action(action);
+    }
+
+    if let Some(action) = &input.hold {
+        validate_action(action);
+    }
+
+    if let Some(hold_ms) = input.hold_ms {
+        assert!(hold_ms > 0, "{name}.hold_ms must be greater than 0");
+    }
+
+    if let Some(action) = &input.hold_joy {
+        validate_action(action);
+    }
+}
+
+fn validate_scroll_override(scroll: &ScrollOverrideConfig, name: &str) {
+    if let Some(dead_zone) = scroll.dead_zone {
+        assert!(
+            (0..127).contains(&dead_zone),
+            "{name}.dead_zone must be in 0..127"
+        );
+    }
+
+    if let Some(speed) = scroll.speed {
+        assert!(speed > 0, "{name}.speed must be greater than 0");
     }
 }
 
